@@ -1,0 +1,68 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import ActivityFeed from "@/components/ActivityFeed";
+import CityMeter from "@/components/CityMeter";
+import HabitBoard from "@/components/HabitBoard";
+import { getBoard, getChallenges, getFeed, getWorkspace } from "@/lib/data";
+import { formatLongDate, today } from "@/lib/game";
+
+export default async function HoyPage() {
+  const workspace = await getWorkspace();
+  if (!workspace) redirect("/empezar");
+
+  const { group, userId } = workspace;
+  const [board, feed, challenges] = await Promise.all([
+    getBoard(group.id, userId),
+    getFeed(group.id, userId, 12),
+    getChallenges(group.id),
+  ]);
+
+  const todayIso = today();
+  const active = challenges.find((c) => !c.completed_at && c.ends_on >= todayIso);
+
+  return (
+    <div className="grid gap-8 lg:grid-cols-[1.35fr_1fr]">
+      <div>
+        <p className="eyebrow mb-1 first-letter:uppercase">{formatLongDate(todayIso)}</p>
+        <HabitBoard groupId={group.id} mine={board.mine} others={board.others} />
+      </div>
+
+      <aside className="flex flex-col gap-6">
+        <section className="panel p-4">
+          <p className="eyebrow mb-3">La ciudad</p>
+          <CityMeter groupId={group.id} coins={group.coins} xp={group.xp} />
+          <p className="mt-3 text-sm text-ink-60">
+            {group.coins.toLocaleString("es-ES")} monedas en caja para construir.
+          </p>
+          <Link href="/ciudad" className="btn btn-sm mt-3">
+            Ir al plano
+          </Link>
+        </section>
+
+        {active ? (
+          <section className="panel p-4">
+            <p className="eyebrow mb-2">Reto en marcha</p>
+            <h3 className="display text-xl">{active.title}</h3>
+            <div className="meter mt-3">
+              <span style={{ width: `${Math.min(100, Math.round((active.done / active.goal) * 100))}%` }} />
+            </div>
+            <p className="num mt-2 text-xs text-ink-60">
+              {active.done} / {active.goal} marcas · termina el {active.ends_on.slice(8, 10)}/
+              {active.ends_on.slice(5, 7)}
+            </p>
+            {active.done >= active.goal ? (
+              <Link href="/retos" className="btn btn-sm btn-primary mt-3">
+                Cobrar la recompensa
+              </Link>
+            ) : null}
+          </section>
+        ) : null}
+
+        <section>
+          <p className="eyebrow mb-2">Últimas marcas</p>
+          <ActivityFeed entries={feed} />
+        </section>
+      </aside>
+    </div>
+  );
+}
