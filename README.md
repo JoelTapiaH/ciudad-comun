@@ -37,6 +37,52 @@ código de invitación de 6 caracteres.
 
 ---
 
+## Despliegue
+
+El orden importa: Supabase te da las claves que necesita Vercel, y Vercel te da
+el dominio que necesita Supabase.
+
+### 1. Supabase
+
+1. Crea el proyecto y ejecuta [`supabase/schema.sql`](supabase/schema.sql) en el
+   SQL Editor.
+2. En **Project Settings → API**, copia la *Project URL* y la clave *anon public*.
+
+### 2. Vercel
+
+1. Entra en [vercel.com/new](https://vercel.com/new) e importa
+   `JoelTapiaH/ciudad-comun`. Vercel detecta Next.js solo; no hay que tocar los
+   ajustes de compilación.
+2. Antes de pulsar **Deploy**, despliega *Environment Variables* y añade:
+
+   | Nombre | Valor |
+   | --- | --- |
+   | `NEXT_PUBLIC_SUPABASE_URL` | la *Project URL* del paso 1 |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | la clave *anon public* del paso 1 |
+
+   Déjalas marcadas para los tres entornos (Production, Preview y Development).
+3. **Deploy**. Anota el dominio que te dé, por ejemplo `ciudad-comun.vercel.app`.
+
+Si despliegas sin esas dos variables la compilación funciona igual, pero la app
+enseña la pantalla de configuración en vez de la portada.
+
+### 3. Volver a Supabase
+
+En **Authentication → URL Configuration**, pon tu dominio de Vercel como
+*Site URL* y añádelo también a *Redirect URLs*. Sin esto, los correos de
+confirmación apuntarían a `localhost`.
+
+Mientras pruebas puedes desactivar «Confirm email» en
+**Authentication → Providers → Email** y entrar sin pasar por el correo.
+
+A partir de aquí, cada `git push` a `main` vuelve a desplegar solo.
+
+> La clave *anon* está pensada para ir en el navegador y es seguro que se vea:
+> lo que protege los datos es el RLS del esquema, no el secreto de esa clave.
+> La que **nunca** debe salir del panel de Supabase es la *service_role*.
+
+---
+
 ## Cómo funciona el juego
 
 | Acción | Efecto |
