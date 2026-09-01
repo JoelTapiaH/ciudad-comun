@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { addHabit, archiveHabit, markHabit, unmarkHabit } from "@/app/(app)/hoy/actions";
@@ -24,10 +24,14 @@ export default function HabitBoard({ groupId, mine, others }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
+  // Canal propio por instancia: supabase-js reutiliza el canal si el nombre
+  // ya existe, y .on() sobre un canal suscrito lanza excepción.
+  const instanceId = useId().replace(/:/g, "");
+
   /* Cuando otro miembro marca algo, la página se refresca sola. */
   useEffect(() => {
     const channel = supabase
-      .channel(`marcas:${groupId}`)
+      .channel(`marcas:${groupId}:${instanceId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "habit_logs", filter: `group_id=eq.${groupId}` },
@@ -36,9 +40,9 @@ export default function HabitBoard({ groupId, mine, others }: Props) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
-  }, [supabase, groupId, router]);
+  }, [supabase, groupId, instanceId, router]);
 
   useEffect(() => setOptimistic({}), [mine, others]);
 

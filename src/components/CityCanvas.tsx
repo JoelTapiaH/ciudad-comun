@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { BuildingSprite, BuildingThumb } from "@/components/BuildingSprite";
@@ -52,6 +52,10 @@ export default function CityCanvas({
   const [zoom, setZoom] = useState(1);
   const scroller = useRef<HTMLDivElement>(null);
 
+  // Canal propio por instancia: supabase-js reutiliza el canal si el nombre
+  // ya existe, y .on() sobre un canal suscrito lanza excepción.
+  const instanceId = useId().replace(/:/g, "");
+
   useEffect(() => setTiles(initialTiles), [initialTiles]);
   useEffect(() => setCoins(initialCoins), [initialCoins]);
   useEffect(() => setXp(initialXp), [initialXp]);
@@ -76,7 +80,7 @@ export default function CityCanvas({
   /* Tiempo real: lo que construye cualquiera del grupo aparece aquí. */
   useEffect(() => {
     const channel = supabase
-      .channel(`ciudad:${groupId}`)
+      .channel(`ciudad:${groupId}:${instanceId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "city_tiles", filter: `group_id=eq.${groupId}` },
@@ -105,9 +109,9 @@ export default function CityCanvas({
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
-  }, [supabase, groupId, markPrinted]);
+  }, [supabase, groupId, instanceId, markPrinted]);
 
   /* Arranca centrado en la rejilla. */
   useEffect(() => {

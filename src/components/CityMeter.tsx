@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { levelProgress } from "@/lib/game";
 
@@ -21,32 +21,41 @@ export default function CityMeter({
   const supabase = createClient();
   const [state, setState] = useState({ coins, xp });
   const [bumped, setBumped] = useState(false);
+  const coinsRef = useRef(coins);
 
-  useEffect(() => setState({ coins, xp }), [coins, xp]);
+  // supabase-js reutiliza el canal si ya existe uno con el mismo nombre, y
+  // llamar a .on() sobre un canal ya suscrito lanza una excepción. Esta
+  // pantalla monta dos medidores a la vez (cabecera y columna), así que cada
+  // instancia necesita su propio canal.
+  const instanceId = useId().replace(/:/g, "");
+
+  useEffect(() => {
+    setState({ coins, xp });
+    coinsRef.current = coins;
+  }, [coins, xp]);
 
   useEffect(() => {
     const channel = supabase
-      .channel(`recursos:${groupId}`)
+      .channel(`recursos:${groupId}:${instanceId}`)
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "groups", filter: `id=eq.${groupId}` },
         (payload) => {
           const next = payload.new as { coins: number; xp: number };
-          setState((prev) => {
-            if (next.coins > prev.coins) {
-              setBumped(true);
-              setTimeout(() => setBumped(false), 900);
-            }
-            return { coins: next.coins, xp: next.xp };
-          });
+          if (next.coins > coinsRef.current) {
+            setBumped(true);
+            setTimeout(() => setBumped(false), 900);
+          }
+          coinsRef.current = next.coins;
+          setState({ coins: next.coins, xp: next.xp });
         },
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
-  }, [supabase, groupId]);
+  }, [supabase, groupId, instanceId]);
 
   const { level, into, span, ratio } = levelProgress(state.xp);
 
