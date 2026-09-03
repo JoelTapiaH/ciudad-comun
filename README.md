@@ -2,8 +2,12 @@
 
 Registro de hábitos en grupo. Cada marca que hace cualquier miembro alimenta la
 misma caja de monedas, y con esas monedas el grupo levanta **una sola ciudad**
-sobre una cuadrícula isométrica. Los retos con fecha desbloquean edificios que
-no están a la venta.
+sobre una cuadrícula isométrica.
+
+Pero la ciudad no solo se construye: **hay que mantenerla en pie**. Los días que
+quedan hábitos sin marcar suben la amenaza, y cuando llega a 100 entra un pueblo
+saqueador. Si la defensa aguanta se le rechaza; si no, los edificios se agrietan
+y acaban en ruinas. Fallar un reto convoca el asalto por sí solo.
 
 - **Web:** Next.js 16 (App Router) + React 19 + Tailwind v4
 - **Datos y sesión:** Supabase (Postgres, Auth, Realtime, RLS)
@@ -85,14 +89,38 @@ A partir de aquí, cada `git push` a `main` vuelve a desplegar solo.
 
 ## Cómo funciona el juego
 
+### Construir
+
 | Acción | Efecto |
 | --- | --- |
 | Marcar un hábito | 10 monedas + 2 por cada día de racha, con tope de 10 días (12–30 monedas) |
 | Racha | Días consecutivos. Un hueco la reinicia |
 | Nivel de ciudad | Umbral de nivel *n* = 75·n·(n−1) → Nv.2 a 150 XP, Nv.3 a 450, Nv.4 a 900 |
 | Construir | Cuesta lo que marca el catálogo y exige el nivel mínimo del edificio |
-| Derribar | Devuelve la mitad de lo que costó |
+| Derribar | Devuelve la mitad de lo que costó, en proporción a lo que quede en pie |
 | Completar un reto | Paga monedas y, si se eligió, coloca un edificio de premio |
+
+### Sobrevivir
+
+| Situación | Efecto sobre la amenaza |
+| --- | --- |
+| Día con todos los hábitos marcados | **−25** |
+| Día con huecos | **+25 × (huecos / hábitos)**. Dejarse uno de cuatro no pesa como abandonarlos todos |
+| Un reto vence sin cumplirse | **+100**: entran seguro |
+| Amenaza ≥ 100 | Asalto. Después baja a 40 si se rechaza, a 30 si entran |
+
+La **defensa** es 30 de base, más lo que aportan los edificios defensivos (a
+prorrata de su integridad), más 2 por cada marca de los últimos 7 días. Solo la
+empalizada, la muralla, la torre de vigía, el monumento y el faro defienden.
+
+Si el asalto entra, golpea una construcción por cada 25 puntos de daño (máximo
+6), y cada golpe se lleva 50 de integridad. A 0 queda en ruinas: no defiende,
+no se derriba con provecho, y hay que reconstruirla. **Reparar** cuesta la mitad
+de lo destrozado.
+
+La liquidación **no usa temporizador**: al abrir la app, `settle_city()` cierra
+de golpe los días pendientes (hasta 60). Funciona igual si entras cada día que
+si vuelves tras dos semanas, y no depende de `pg_cron` ni del plan de pago.
 
 **Todas estas cuentas viven en la base de datos**, no en el navegador. Las
 monedas se calculan en un trigger `BEFORE INSERT` que reescribe lo que mande el
@@ -107,8 +135,9 @@ grupos a los que perteneces, y solo puedes marcar o borrar tus propios hábitos.
 
 ## Pruebas
 
-El esquema tiene 57 comprobaciones automáticas —rachas, economía, construcción,
-retos y RLS— que se ejecutan contra un Postgres desechable:
+El esquema tiene 71 comprobaciones automáticas —rachas, economía, construcción,
+retos, asaltos, daños, reparación y RLS— que se ejecutan contra un Postgres
+desechable:
 
 ```bash
 brew install postgresql@16
@@ -140,9 +169,12 @@ src/
       retos/              Retos con meta común
       grupo/              Invitación, reparto de la semana, registro
   components/
-    BuildingSprite.tsx    Catálogo de siluetas isométricas en SVG
+    BuildingSprite.tsx    Catálogo de siluetas isométricas, con daños y ruinas
     CityCanvas.tsx        Cuadrícula interactiva con Realtime
     HabitBoard.tsx        Tablero del día con marcado optimista
+    ThreatPanel.tsx       Estado del asedio: amenaza, defensa y pronóstico
+    RaidAlert.tsx         Qué pasó mientras nadie miraba
+    RaidChronicle.tsx     Historial de asaltos
   lib/
     game.ts               Reglas del juego (espejo de las de Postgres)
     data.ts               Consultas del servidor

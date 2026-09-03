@@ -3,19 +3,39 @@ import { redirect } from "next/navigation";
 import ActivityFeed from "@/components/ActivityFeed";
 import CityMeter from "@/components/CityMeter";
 import HabitBoard from "@/components/HabitBoard";
-import { getBoard, getChallenges, getFeed, getWorkspace } from "@/lib/data";
-import { formatLongDate, today } from "@/lib/game";
+import RaidAlert from "@/components/RaidAlert";
+import {
+  getBoard,
+  getBuildings,
+  getChallenges,
+  getCityTiles,
+  getFeed,
+  getRaids,
+  getWeekMarks,
+  getWorkspace,
+} from "@/lib/data";
+import { cityDefense, formatLongDate, threatBand, today } from "@/lib/game";
 
 export default async function HoyPage() {
   const workspace = await getWorkspace();
   if (!workspace) redirect("/empezar");
 
-  const { group, userId } = workspace;
-  const [board, feed, challenges] = await Promise.all([
+  const { group, userId, newRaids } = workspace;
+  const [board, feed, challenges, tiles, buildings, weekMarks, raids] = await Promise.all([
     getBoard(group.id, userId),
     getFeed(group.id, userId, 12),
     getChallenges(group.id),
+    getCityTiles(group.id),
+    getBuildings(),
+    getWeekMarks(group.id),
+    getRaids(group.id, 3),
   ]);
+
+  const defense = cityDefense(tiles, new Map(buildings.map((b) => [b.id, b])), weekMarks);
+  const band = threatBand(group.threat);
+  const habitsTotal = board.mine.length + board.others.length;
+  const marksToday =
+    board.mine.filter((h) => h.doneToday).length + board.others.filter((h) => h.doneToday).length;
 
   const todayIso = today();
   const active = challenges.find((c) => !c.completed_at && c.ends_on >= todayIso);
@@ -23,11 +43,32 @@ export default async function HoyPage() {
   return (
     <div className="grid gap-8 lg:grid-cols-[1.35fr_1fr]">
       <div>
+        {newRaids > 0 ? <RaidAlert raids={raids.slice(0, newRaids)} /> : null}
+
         <p className="eyebrow mb-1 first-letter:uppercase">{formatLongDate(todayIso)}</p>
         <HabitBoard groupId={group.id} mine={board.mine} others={board.others} />
       </div>
 
       <aside className="flex flex-col gap-6">
+        {band.key !== "calma" ? (
+          <section className="panel p-4" style={{ borderColor: band.ink, boxShadow: `4px 4px 0 ${band.ink}` }}>
+            <p className="eyebrow mb-1">Amenaza</p>
+            <h3 className="display text-xl" style={{ color: band.ink }}>
+              {band.label}
+            </h3>
+            <p className="mt-1 text-sm text-ink-60">{band.blurb}</p>
+            <p className="num mt-2 text-xs text-ink-60">
+              {group.threat} de amenaza · {defense} de defensa ·{" "}
+              {habitsTotal - marksToday > 0
+                ? `${habitsTotal - marksToday} marcas sin hacer hoy`
+                : "hoy está cubierto"}
+            </p>
+            <Link href="/ciudad" className="btn btn-sm mt-3">
+              Ver el asedio
+            </Link>
+          </section>
+        ) : null}
+
         <section className="panel p-4">
           <p className="eyebrow mb-3">La ciudad</p>
           <CityMeter groupId={group.id} coins={group.coins} xp={group.xp} />

@@ -1,18 +1,36 @@
 import { redirect } from "next/navigation";
 import CityCanvas from "@/components/CityCanvas";
-import { getBuildings, getCityTiles, getWorkspace } from "@/lib/data";
-import { GRID, cityLevel, xpForLevel } from "@/lib/game";
+import RaidChronicle from "@/components/RaidChronicle";
+import ThreatPanel from "@/components/ThreatPanel";
+import {
+  getBuildings,
+  getCityTiles,
+  getRaids,
+  getTodayPulse,
+  getWeekMarks,
+  getWorkspace,
+} from "@/lib/data";
+import { GRID, cityDefense, cityLevel, xpForLevel } from "@/lib/game";
 
 export default async function CiudadPage() {
   const workspace = await getWorkspace();
   if (!workspace) redirect("/empezar");
 
   const { group, members } = workspace;
-  const [tiles, buildings] = await Promise.all([getCityTiles(group.id), getBuildings()]);
+  const [tiles, buildings, raids, weekMarks, pulse] = await Promise.all([
+    getCityTiles(group.id),
+    getBuildings(),
+    getRaids(group.id),
+    getWeekMarks(group.id),
+    getTodayPulse(group.id),
+  ]);
 
   const builderNames = Object.fromEntries(members.map((m) => [m.id, m.display_name]));
   const level = cityLevel(group.xp);
   const nextUnlock = buildings.find((b) => !b.reward_only && b.min_level === level + 1);
+  const defense = cityDefense(tiles, new Map(buildings.map((b) => [b.id, b])), weekMarks);
+  const ruins = tiles.filter((t) => t.integrity <= 0).length;
+  const damaged = tiles.filter((t) => t.integrity > 0 && t.integrity < 100).length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -26,6 +44,20 @@ export default async function CiudadPage() {
         builderNames={builderNames}
       />
 
+      <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
+        <ThreatPanel
+          threat={group.threat}
+          defense={defense}
+          habits={pulse.habits}
+          marks={pulse.marks}
+        />
+
+        <section>
+          <p className="eyebrow mb-2">Crónica de asaltos</p>
+          <RaidChronicle raids={raids} />
+        </section>
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="panel p-4">
           <p className="eyebrow mb-1">Parcelas</p>
@@ -33,6 +65,13 @@ export default async function CiudadPage() {
             {tiles.length}
             <span className="text-ink-35"> / {GRID * GRID}</span>
           </p>
+          {ruins + damaged > 0 ? (
+            <p className="num mt-1 text-xs text-[var(--pink)]">
+              {ruins > 0 ? `${ruins} en ruinas` : null}
+              {ruins > 0 && damaged > 0 ? " · " : null}
+              {damaged > 0 ? `${damaged} dañadas` : null}
+            </p>
+          ) : null}
         </div>
         <div className="panel p-4">
           <p className="eyebrow mb-1">Siguiente nivel</p>
@@ -47,8 +86,9 @@ export default async function CiudadPage() {
       </div>
 
       <p className="text-sm text-ink-60">
-        Derribar devuelve la mitad de lo que costó el edificio. Los monumentos y el faro no se
-        compran: salen de completar retos.
+        Los edificios defensivos (⛊) son lo único que suma a la defensa, junto con las marcas de la
+        última semana. Reparar cuesta la mitad de lo destrozado; derribar unas ruinas no devuelve
+        nada. Los monumentos y el faro no se compran: salen de completar retos, y también defienden.
       </p>
     </div>
   );

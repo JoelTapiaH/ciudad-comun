@@ -11,6 +11,7 @@ import type {
   HabitLog,
   HabitWithToday,
   Profile,
+  Raid,
 } from "@/lib/types";
 
 export const isConfigured = () =>
@@ -29,6 +30,8 @@ export type Workspace = {
   group: Group;
   members: (Profile & { role: string })[];
   userId: string;
+  /** Asaltos resueltos al abrir la app. Sirve para avisar de lo que pasó. */
+  newRaids: number;
 };
 
 /** Grupo activo del usuario: por ahora, el primero al que se unió. */
@@ -47,6 +50,13 @@ export const getWorkspace = cache(async (): Promise<Workspace | null> => {
     .maybeSingle();
 
   if (!membership) return null;
+
+  // Antes de leer nada, se ponen al día los días cerrados que falten: la
+  // amenaza acumulada y los asaltos pendientes. Si no hay nada que liquidar
+  // la función vuelve enseguida, así que el coste habitual es una consulta.
+  const { data: settled } = await supabase.rpc("settle_city", {
+    p_group: membership.group_id,
+  });
 
   const [{ data: group }, { data: rows }] = await Promise.all([
     supabase.from("groups").select("*").eq("id", membership.group_id).single(),
@@ -67,7 +77,7 @@ export const getWorkspace = cache(async (): Promise<Workspace | null> => {
     .filter((m): m is Profile & { role: string } => m !== null)
     .sort((a, b) => a.display_name.localeCompare(b.display_name, "es"));
 
-  return { group: group as Group, members, userId: user.id };
+  return { group: group as Group, members, userId: user.id, newRaids: settled ?? 0 };
 });
 
 export const getBuildings = cache(async (): Promise<Building[]> => {
@@ -159,6 +169,46 @@ export async function getFeed(groupId: string, userId: string, limit = 20): Prom
       isMe: log.user_id === userId,
     };
   });
+}
+
+export async function getRaids(groupId: string, limit = 12): Promise<Raid[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("raids")
+    .select("*")
+    .eq("group_id", groupId)
+    .order("happened_on", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as Raid[];
+}
+
+/** Marcas de los últimos 7 días: el pulso que alimenta la defensa. */
+export async function getWeekMarks(groupId: string): Promise<number> {
+  const supabase = await createClient();
+  const { count } = await supabase
+    .from("habit_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("group_id", groupId)
+    .gte("log_date", shiftDate(today(), -6));
+  return count ?? 0;
+}
+
+/** Hábitos activos y marcas de hoy, para anticipar la amenaza de esta noche. */
+export async function getTodayPulse(groupId: string) {
+  const supabase = await createClient();
+  const [{ count: habits }, { count: marks }] = await Promise.all([
+    supabase
+      .from("habits")
+      .select("id", { count: "exact", head: true })
+      .eq("group_id", groupId)
+      .eq("archived", false),
+    supabase
+      .from("habit_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("group_id", groupId)
+      .eq("log_date", today()),
+  ]);
+  return { habits: habits ?? 0, marks: marks ?? 0 };
 }
 
 export type ChallengeWithProgress = Challenge & { done: number };

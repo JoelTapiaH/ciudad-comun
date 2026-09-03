@@ -12,6 +12,7 @@ import {
   cityLevel,
   isoPoint,
   isoViewBox,
+  repairCost,
 } from "@/lib/game";
 import type { Building, CityTile, Ink } from "@/lib/types";
 
@@ -91,6 +92,11 @@ export default function CityCanvas({
               prev.some((t) => t.x === tile.x && t.y === tile.y) ? prev : [...prev, tile],
             );
             markPrinted(key(tile.x, tile.y));
+          } else if (payload.eventType === "UPDATE") {
+            const tile = payload.new as CityTile;
+            setTiles((prev) =>
+              prev.map((t) => (t.x === tile.x && t.y === tile.y ? tile : t)),
+            );
           } else if (payload.eventType === "DELETE") {
             const gone = payload.old as CityTile;
             setTiles((prev) => prev.filter((t) => !(t.x === gone.x && t.y === gone.y)));
@@ -152,6 +158,32 @@ export default function CityCanvas({
     router.refresh();
   }
 
+  async function repair(tile: CityTile) {
+    const building = byId.get(tile.building_id);
+    if (!building) return;
+    const precio = repairCost(building.cost, tile.integrity);
+
+    setBusy(true);
+    const { error } = await supabase.rpc("repair_building", {
+      p_group: groupId,
+      p_x: tile.x,
+      p_y: tile.y,
+    });
+    setBusy(false);
+
+    if (error) {
+      setMessage({ text: error.message, tone: "error" });
+      return;
+    }
+    setTiles((prev) =>
+      prev.map((t) => (t.x === tile.x && t.y === tile.y ? { ...t, integrity: 100 } : t)),
+    );
+    setInspecting(null);
+    setCoins((c) => c - precio);
+    setMessage({ text: `${building.name} en pie otra vez. −${precio} monedas.`, tone: "ok" });
+    router.refresh();
+  }
+
   async function demolish(tile: CityTile) {
     setBusy(true);
     const { error } = await supabase.rpc("demolish_building", {
@@ -166,7 +198,7 @@ export default function CityCanvas({
       return;
     }
     setTiles((prev) => prev.filter((t) => !(t.x === tile.x && t.y === tile.y)));
-    const refund = Math.floor((byId.get(tile.building_id)?.cost ?? 0) / 2);
+    const refund = Math.floor(((byId.get(tile.building_id)?.cost ?? 0) * tile.integrity) / 200);
     setCoins((c) => c + refund);
     setMessage({ text: `Parcela despejada. Se devuelven ${refund} monedas.`, tone: "ok" });
     router.refresh();
@@ -281,11 +313,11 @@ export default function CityCanvas({
                   <>
                     {isPrinting ? (
                       <g className="ink-plate tile-print-ghost" style={{ pointerEvents: "none" }}>
-                        <BuildingSprite id={tile.building_id} ink="var(--blue)" />
+                        <BuildingSprite id={tile.building_id} ink="var(--blue)" integrity={tile.integrity} />
                       </g>
                     ) : null}
                     <g className={`ink-plate${isPrinting ? " tile-print" : ""}`}>
-                      <BuildingSprite id={tile.building_id} ink={ink} />
+                      <BuildingSprite id={tile.building_id} ink={ink} integrity={tile.integrity} />
                     </g>
                   </>
                 ) : null}
@@ -321,11 +353,19 @@ export default function CityCanvas({
               id={inspecting.building_id}
               ink={INK_VAR[(byId.get(inspecting.building_id)?.ink ?? "blue") as Ink]}
               size={34}
+              integrity={inspecting.integrity}
             />
             <div>
-              <p className="display text-lg">{byId.get(inspecting.building_id)?.name}</p>
+              <p className="display text-lg">
+                {byId.get(inspecting.building_id)?.name}
+                {inspecting.integrity <= 0 ? <span className="text-[var(--pink)]"> en ruinas</span> : null}
+              </p>
               <p className="num text-xs text-ink-60">
                 Parcela {inspecting.x}·{inspecting.y}
+                {inspecting.integrity < 100 ? ` · ${inspecting.integrity}% en pie` : ""}
+                {(byId.get(inspecting.building_id)?.defense ?? 0) > 0
+                  ? ` · defensa ${Math.floor(((byId.get(inspecting.building_id)?.defense ?? 0) * inspecting.integrity) / 100)}`
+                  : ""}
                 {inspecting.placed_by && builderNames[inspecting.placed_by]
                   ? ` · lo levantó ${builderNames[inspecting.placed_by]}`
                   : ""}
@@ -337,6 +377,17 @@ export default function CityCanvas({
               <button type="button" className="btn btn-sm btn-quiet" onClick={() => setInspecting(null)}>
                 Cerrar
               </button>
+              {inspecting.integrity < 100 ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  disabled={busy}
+                  onClick={() => repair(inspecting)}
+                >
+                  Reparar ◎{" "}
+                  {repairCost(byId.get(inspecting.building_id)?.cost ?? 0, inspecting.integrity)}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="btn btn-sm"
@@ -387,6 +438,9 @@ export default function CityCanvas({
                     >
                       {locked ? `Nv. ${b.min_level}` : `◎ ${b.cost}`}
                     </span>
+                    {b.defense > 0 ? (
+                      <span className="num text-[11px] text-[var(--green)]">⛊ {b.defense}</span>
+                    ) : null}
                   </button>
                 </li>
               );

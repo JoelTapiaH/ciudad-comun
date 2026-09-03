@@ -100,29 +100,61 @@ create table if not exists public.challenges (
 );
 create index if not exists challenges_group_idx on public.challenges (group_id, ends_on desc);
 
+create table if not exists public.raids (
+  id            uuid primary key default gen_random_uuid(),
+  group_id      uuid not null references public.groups on delete cascade,
+  happened_on   date not null,
+  raider        text not null,
+  power         int not null,
+  defense       int not null,
+  repelled      boolean not null,
+  buildings_hit int not null default 0,
+  created_at    timestamptz not null default now()
+);
+create index if not exists raids_group_idx on public.raids (group_id, happened_on desc);
+
+-- ---------------------------------------------------------------------------
+-- Migraciones: columnas de supervivencia añadidas después de la primera
+-- versión. Con "if not exists" una base de datos ya en uso se actualiza sin
+-- perder nada al volver a ejecutar este archivo.
+-- ---------------------------------------------------------------------------
+
+alter table public.groups     add column if not exists threat          int not null default 0;
+alter table public.groups     add column if not exists last_settled_on date not null default ((now() at time zone 'utc')::date - 1);
+alter table public.city_tiles add column if not exists integrity       int not null default 100;
+alter table public.buildings  add column if not exists defense         int not null default 0;
+
+do $$ begin
+  alter table public.city_tiles add constraint city_tiles_integrity_ck check (integrity between 0 and 100);
+exception when duplicate_object then null; end $$;
+
 -- ---------------------------------------------------------------------------
 -- Catálogo de edificios (semilla)
 -- ---------------------------------------------------------------------------
 
-insert into public.buildings (id, name, cost, min_level, ink, category, reward_only) values
-  ('park',      'Parque',            40,  1, 'green',  'verde',   false),
-  ('house',     'Casa',              60,  1, 'yellow', 'vivienda',false),
-  ('kiosk',     'Quiosco',           75,  1, 'pink',   'comercio',false),
-  ('trees',     'Arboleda',          30,  1, 'green',  'verde',   false),
-  ('cafe',      'Cafetería',        110,  2, 'pink',   'comercio',false),
-  ('gym',       'Gimnasio',         140,  2, 'blue',   'salud',   false),
-  ('library',   'Biblioteca',       160,  2, 'blue',   'cultura', false),
-  ('fountain',  'Fuente',           130,  3, 'blue',   'verde',   false),
-  ('block',     'Bloque de pisos',  220,  3, 'yellow', 'vivienda',false),
-  ('clinic',    'Centro de salud',  260,  3, 'pink',   'salud',   false),
-  ('theatre',   'Teatro',           340,  4, 'pink',   'cultura', false),
-  ('tower',     'Torre',            420,  4, 'blue',   'vivienda',false),
-  ('stadium',   'Estadio',          600,  5, 'green',  'salud',   false),
-  ('monument',  'Monumento',          0,  1, 'yellow', 'hito',    true),
-  ('lighthouse','Faro',               0,  1, 'pink',   'hito',    true)
+insert into public.buildings (id, name, cost, min_level, ink, category, reward_only, defense) values
+  ('park',      'Parque',            40,  1, 'green',  'verde',   false,  0),
+  ('house',     'Casa',              60,  1, 'yellow', 'vivienda',false,  0),
+  ('kiosk',     'Quiosco',           75,  1, 'pink',   'comercio',false,  0),
+  ('trees',     'Arboleda',          30,  1, 'green',  'verde',   false,  0),
+  ('palisade',  'Empalizada',        70,  1, 'yellow', 'defensa', false, 18),
+  ('cafe',      'Cafetería',        110,  2, 'pink',   'comercio',false,  0),
+  ('gym',       'Gimnasio',         140,  2, 'blue',   'salud',   false,  0),
+  ('library',   'Biblioteca',       160,  2, 'blue',   'cultura', false,  0),
+  ('wall',      'Muralla',          150,  2, 'blue',   'defensa', false, 35),
+  ('fountain',  'Fuente',           130,  3, 'blue',   'verde',   false,  0),
+  ('block',     'Bloque de pisos',  220,  3, 'yellow', 'vivienda',false,  0),
+  ('clinic',    'Centro de salud',  260,  3, 'pink',   'salud',   false,  0),
+  ('watchtower','Torre de vigía',   240,  3, 'yellow', 'defensa', false, 70),
+  ('theatre',   'Teatro',           340,  4, 'pink',   'cultura', false,  0),
+  ('tower',     'Torre',            420,  4, 'blue',   'vivienda',false,  0),
+  ('stadium',   'Estadio',          600,  5, 'green',  'salud',   false,  0),
+  ('monument',  'Monumento',          0,  1, 'yellow', 'hito',    true,  40),
+  ('lighthouse','Faro',               0,  1, 'pink',   'hito',    true,  55)
 on conflict (id) do update set
   name = excluded.name, cost = excluded.cost, min_level = excluded.min_level,
-  ink = excluded.ink, category = excluded.category, reward_only = excluded.reward_only;
+  ink = excluded.ink, category = excluded.category, reward_only = excluded.reward_only,
+  defense = excluded.defense;
 
 -- ---------------------------------------------------------------------------
 -- Funciones de apoyo
@@ -357,18 +389,20 @@ create or replace function public.demolish_building(p_group uuid, p_x int, p_y i
 returns void language plpgsql security definer set search_path = public as $$
 declare
   v_cost int;
+  v_integrity int;
 begin
   if not public.is_member(p_group) then raise exception 'No perteneces a esta ciudad'; end if;
 
-  select b.cost into v_cost
+  select b.cost, t.integrity into v_cost, v_integrity
   from public.city_tiles t join public.buildings b on b.id = t.building_id
   where t.group_id = p_group and t.x = p_x and t.y = p_y;
 
   if v_cost is null then raise exception 'Ahí no hay nada que derribar'; end if;
 
   delete from public.city_tiles where group_id = p_group and x = p_x and y = p_y;
-  -- Se devuelve la mitad: derribar cuesta algo.
-  update public.groups set coins = coins + (v_cost / 2) where id = p_group;
+  -- Se devuelve la mitad de lo que costó, y solo en proporción a lo que
+  -- quedaba en pie: de unas ruinas no se recupera nada.
+  update public.groups set coins = coins + (v_cost * v_integrity / 200) where id = p_group;
 end;
 $$;
 
@@ -431,6 +465,177 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
+-- Supervivencia: la ciudad se puede perder
+--
+-- Cada hábito que se queda sin marcar sube la amenaza; un día completo la
+-- baja. Cuando la amenaza llega a 100 entra un pueblo saqueador. Si la defensa
+-- aguanta, se le rechaza; si no, los edificios pierden integridad y acaban en
+-- ruinas.
+--
+-- Todo se calcula al abrir la app, no con un temporizador: settle_city()
+-- liquida de golpe los días cerrados que falten. Así funciona en el plan
+-- gratuito, sin depender de pg_cron, y el resultado es el mismo tanto si
+-- entras cada día como si vuelves después de dos semanas.
+-- ---------------------------------------------------------------------------
+
+-- Lo que la ciudad puede oponer hoy: base fija, lo que aportan los edificios
+-- en pie (a prorrata de su integridad) y el pulso de la última semana.
+create or replace function public.city_defense(p_group uuid, p_on date default null)
+returns int language sql stable security definer set search_path = public as $$
+  select 30
+    + coalesce((
+        select sum(b.defense * t.integrity / 100)::int
+        from public.city_tiles t
+        join public.buildings b on b.id = t.building_id
+        where t.group_id = p_group
+      ), 0)
+    + coalesce((
+        select count(*)::int * 2
+        from public.habit_logs
+        where group_id = p_group
+          and log_date between coalesce(p_on, (now() at time zone 'utc')::date) - 6
+                           and coalesce(p_on, (now() at time zone 'utc')::date)
+      ), 0);
+$$;
+
+create or replace function public.settle_city(p_group uuid)
+returns int language plpgsql security definer set search_path = public as $$
+declare
+  g          public.groups%rowtype;
+  d          date;
+  hoy        date := (now() at time zone 'utc')::date;
+  v_habits   int;
+  v_marks    int;
+  v_falta    int;
+  v_fallidos int;
+  v_threat   int;
+  v_defensa  int;
+  v_poder    int;
+  v_dano     int;
+  v_golpes   int;
+  v_tocados  int;
+  v_nombre   text;
+  v_raids    int := 0;
+  pueblos    text[] := array[
+    'Ceniza', 'Villa Óxido', 'Los Yermos', 'Marca Negra',
+    'Cuervo Gris', 'La Deriva', 'Polvo Seco', 'Los Sin Racha'
+  ];
+begin
+  if not public.is_member(p_group) then raise exception 'No perteneces a esta ciudad'; end if;
+
+  select * into g from public.groups where id = p_group for update;
+  if g.last_settled_on >= hoy - 1 then return 0; end if;
+
+  v_threat := g.threat;
+  -- Solo se liquidan días cerrados, y como mucho 60: volver tras un abandono
+  -- largo no debe castigar con cien asaltos ni tardar una eternidad.
+  d := greatest(g.last_settled_on + 1, hoy - 60);
+
+  while d < hoy loop
+    select count(*) into v_habits
+      from public.habits
+      where group_id = p_group and not archived and created_at::date <= d;
+
+    select count(*) into v_marks
+      from public.habit_logs where group_id = p_group and log_date = d;
+
+    if v_habits > 0 then
+      v_falta := greatest(0, v_habits - v_marks);
+      -- Proporcional, no absoluto: dejarse uno de cuatro hábitos no puede
+      -- pesar lo mismo que abandonarlos todos. Un día perdido del todo sube
+      -- 25 y un día redondo baja 25, así que se compensan uno a uno.
+      if v_falta = 0 then
+        v_threat := greatest(0, v_threat - 25);
+      else
+        v_threat := v_threat + (25 * v_falta) / v_habits;
+      end if;
+    end if;
+
+    -- Un reto que vence sin cumplirse convoca el asalto por sí solo: 100 es
+    -- exactamente el umbral. Que entren no significa que ganen; para eso está
+    -- la defensa.
+    select count(*) into v_fallidos
+      from public.challenges c
+      where c.group_id = p_group and c.ends_on = d and c.completed_at is null
+        and public.challenge_progress(c.id) < c.goal;
+    v_threat := v_threat + v_fallidos * 100;
+
+    if v_threat >= 100 then
+      v_defensa := public.city_defense(p_group, d);
+      v_poder   := v_threat;
+      v_tocados := 0;
+      v_nombre  := pueblos[1 + (((hashtext(p_group::text || d::text) % array_length(pueblos, 1))
+                                 + array_length(pueblos, 1)) % array_length(pueblos, 1))];
+
+      if v_defensa >= v_poder then
+        v_threat := 40;                            -- rechazados, pero rondando
+      else
+        v_dano   := v_poder - v_defensa;
+        v_golpes := least(6, greatest(1, v_dano / 25));
+
+        with objetivo as (
+          select t.x, t.y
+          from public.city_tiles t
+          join public.buildings b on b.id = t.building_id
+          where t.group_id = p_group and t.integrity > 0
+          order by t.integrity desc, b.cost desc, t.x, t.y
+          limit v_golpes
+        )
+        update public.city_tiles t
+          set integrity = greatest(0, t.integrity - 50)
+          from objetivo o
+          where t.group_id = p_group and t.x = o.x and t.y = o.y;
+
+        get diagnostics v_tocados = row_count;
+        v_threat := 30;
+      end if;
+
+      insert into public.raids (group_id, happened_on, raider, power, defense, repelled, buildings_hit)
+      values (p_group, d, v_nombre, v_poder, v_defensa, v_defensa >= v_poder, v_tocados);
+      v_raids := v_raids + 1;
+    end if;
+
+    d := d + 1;
+  end loop;
+
+  update public.groups set threat = v_threat, last_settled_on = hoy - 1 where id = p_group;
+  return v_raids;
+end;
+$$;
+
+create or replace function public.repair_building(p_group uuid, p_x int, p_y int)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_cost      int;
+  v_integrity int;
+  v_nombre    text;
+  v_precio    int;
+  v_coins     int;
+begin
+  if not public.is_member(p_group) then raise exception 'No perteneces a esta ciudad'; end if;
+
+  select b.cost, t.integrity, b.name into v_cost, v_integrity, v_nombre
+  from public.city_tiles t join public.buildings b on b.id = t.building_id
+  where t.group_id = p_group and t.x = p_x and t.y = p_y;
+
+  if v_cost is null then raise exception 'Ahí no hay nada que reparar'; end if;
+  if v_integrity >= 100 then raise exception 'La construcción «%» está entera', v_nombre; end if;
+
+  -- Reconstruir sale por la mitad de lo que costó, en proporción al destrozo.
+  v_precio := greatest(5, (v_cost * (100 - v_integrity)) / 200);
+
+  select coins into v_coins from public.groups where id = p_group for update;
+  if v_coins < v_precio then
+    raise exception 'Faltan % monedas para reparar: %', v_precio - v_coins, v_nombre;
+  end if;
+
+  update public.groups set coins = coins - v_precio where id = p_group;
+  update public.city_tiles set integrity = 100
+    where group_id = p_group and x = p_x and y = p_y;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- Row Level Security
 -- ---------------------------------------------------------------------------
 
@@ -442,6 +647,7 @@ alter table public.habit_logs    enable row level security;
 alter table public.buildings     enable row level security;
 alter table public.city_tiles    enable row level security;
 alter table public.challenges    enable row level security;
+alter table public.raids         enable row level security;
 
 drop policy if exists profiles_read on public.profiles;
 create policy profiles_read on public.profiles
@@ -512,6 +718,10 @@ drop policy if exists challenges_read on public.challenges;
 create policy challenges_read on public.challenges
   for select to authenticated using (public.is_member(group_id));
 
+drop policy if exists raids_read on public.raids;
+create policy raids_read on public.raids
+  for select to authenticated using (public.is_member(group_id));
+
 drop policy if exists challenges_insert on public.challenges;
 create policy challenges_insert on public.challenges
   for insert to authenticated with check (public.is_member(group_id));
@@ -526,4 +736,5 @@ begin
   begin execute 'alter publication supabase_realtime add table public.city_tiles'; exception when duplicate_object then null; end;
   begin execute 'alter publication supabase_realtime add table public.groups';     exception when duplicate_object then null; end;
   begin execute 'alter publication supabase_realtime add table public.challenges'; exception when duplicate_object then null; end;
+  begin execute 'alter publication supabase_realtime add table public.raids';      exception when duplicate_object then null; end;
 end $$;

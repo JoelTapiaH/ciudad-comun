@@ -152,11 +152,87 @@ function Tree({ x, y, scale = 1, ink }: { x: number; y: number; scale?: number; 
   );
 }
 
+/** Lo que queda cuando un asalto termina el trabajo: escombro y una viga. */
+function Rubble({ ink }: { ink: string }) {
+  return (
+    <g>
+      <polygon points={diamond(0.9)} fill={tint(ink, 22)} stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
+      <polygon points="-16,2 -6,-4 2,1 -7,7" fill={shade(ink, 55)} stroke={KEYLINE} strokeWidth={1} strokeLinejoin="round" />
+      <polygon points="1,5 11,-1 19,4 9,10" fill={shade(ink, 40)} stroke={KEYLINE} strokeWidth={1} strokeLinejoin="round" />
+      <polygon points="-6,-6 3,-11 9,-7 0,-2" fill={shade(ink, 70)} stroke={KEYLINE} strokeWidth={1} strokeLinejoin="round" />
+      <line x1={-12} y1={-8} x2={8} y2={-20} stroke={KEYLINE} strokeWidth={2.2} strokeLinecap="round" />
+    </g>
+  );
+}
+
+/** Grietas y cascotes sobre un edificio que aguantó, pero a duras penas.
+    El destrozo crece por número de grietas, no solo por opacidad: tres
+    estados con la misma marca a distinta transparencia no se distinguían. */
+function Damage({ severity }: { severity: number }) {
+  const grietas = severity > 0.6 ? 3 : severity > 0.35 ? 2 : 1;
+  const trazos = [
+    "M-9 -4 l4 -10 l-3 -6 l5 -9",
+    "M9 -2 l-4 -9 l5 -7 l-2 -8",
+    "M-1 -16 l5 -8 l-4 -7",
+  ].slice(0, grietas);
+
+  return (
+    <g style={{ pointerEvents: "none" }}>
+      {trazos.map((d, i) => (
+        <path
+          key={i}
+          d={d}
+          fill="none"
+          stroke={KEYLINE}
+          strokeWidth={1.5 + severity}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ))}
+      {severity > 0.35
+        ? [
+            [-15, 5, 2.6],
+            [14, 6, 2],
+            [-4, 9, 1.6],
+          ]
+            .slice(0, grietas)
+            .map(([cx, cy, r], i) => (
+              <polygon
+                key={`c${i}`}
+                points={`${cx - r},${cy} ${cx},${cy - r * 0.6} ${cx + r},${cy} ${cx},${cy + r * 0.6}`}
+                fill={KEYLINE}
+                opacity={0.6}
+              />
+            ))
+        : null}
+    </g>
+  );
+}
+
 /* --------------------------------------------------------------------------
    Catálogo de siluetas. La clave coincide con buildings.id en la base.
    -------------------------------------------------------------------------- */
 
-export function BuildingSprite({ id, ink }: { id: string; ink: string }) {
+export function BuildingSprite({
+  id,
+  ink,
+  integrity = 100,
+}: {
+  id: string;
+  ink: string;
+  integrity?: number;
+}) {
+  if (integrity <= 0) return <Rubble ink={ink} />;
+
+  return (
+    <>
+      <Silhouette id={id} ink={ink} />
+      {integrity < 100 ? <Damage severity={1 - integrity / 100} /> : null}
+    </>
+  );
+}
+
+function Silhouette({ id, ink }: { id: string; ink: string }) {
   switch (id) {
     case "trees":
       return (
@@ -195,6 +271,79 @@ export function BuildingSprite({ id, ink }: { id: string; ink: string }) {
           <polygon points={diamond(0.86, 15)} fill={shade(ink, 85)} stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
           <line x1={0} y1={-15} x2={0} y2={-24} stroke={KEYLINE} strokeWidth={1.6} />
           <circle cx={0} cy={-26} r={2.6} fill={ink} stroke={KEYLINE} strokeWidth={1} />
+        </g>
+      );
+
+    case "palisade":
+      return (
+        <g>
+          <polygon points={diamond(0.96)} fill={tint(ink, 34)} stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
+          {[0, 1, 2, 3, 4, 5].map((i) => {
+            const t = i / 5;
+            const x = -HW * 0.9 + t * HW * 1.8;
+            const y = -HH * 0.9 + t * HH * 1.8;
+            return (
+              <g key={i} transform={`translate(${x} ${y})`}>
+                <polygon points="-4,0 4,0 4,-15 0,-20 -4,-15" fill={shade(ink, 82)} stroke={KEYLINE} strokeWidth={1} strokeLinejoin="round" />
+              </g>
+            );
+          })}
+          <line x1={-HW * 0.86} y1={-HH * 0.86 - 9} x2={HW * 0.86} y2={HH * 0.86 - 9} stroke={KEYLINE} strokeWidth={1.6} />
+        </g>
+      );
+
+    case "wall": {
+      const sc = 0.92;
+      const alto = 24;
+      // Almenas repartidas sobre las dos aristas visibles del remate. Sin
+      // ellas el bloque se confundía con cualquier otro edificio.
+      const merlon = (px: number, py: number, k: string) => (
+        <g key={k} transform={`translate(${px} ${py})`}>
+          <polygon
+            points="-5,0 0,2.5 5,0 5,-9 0,-11.5 -5,-9"
+            fill={ink}
+            stroke={KEYLINE}
+            strokeWidth={1}
+            strokeLinejoin="round"
+          />
+        </g>
+      );
+      const almenas = [0.22, 0.5, 0.78].flatMap((t) => [
+        // arista inferior derecha: de (0, HH·s) hacia (HW·s, 0)
+        merlon(t * HW * sc, HH * sc - t * HH * sc - alto, `r${t}`),
+        // arista inferior izquierda: de (−HW·s, 0) hacia (0, HH·s)
+        merlon(-HW * sc + t * HW * sc, t * HH * sc - alto, `l${t}`),
+      ]);
+      return (
+        <g>
+          <Box s={sc} h={alto} ink={ink} />
+          {almenas}
+        </g>
+      );
+    }
+
+    case "watchtower":
+      return (
+        <g>
+          <Box s={0.86} h={8} ink={ink} />
+          <polygon
+            points={`${-13},${-8} 13,${-8} 8,${-56} -8,${-56}`}
+            fill={shade(ink, 84)}
+            stroke={KEYLINE}
+            strokeWidth={1.2}
+            strokeLinejoin="round"
+          />
+          {/* Plataforma del vigía, más ancha que el fuste */}
+          <polygon points={diamond(0.66, 60)} fill={ink} stroke={KEYLINE} strokeWidth={1.2} strokeLinejoin="round" />
+          <polygon
+            points={`${-15},${-60} 15,${-60} 15,${-70} -15,${-70}`}
+            fill={shade(ink, 62)}
+            stroke={KEYLINE}
+            strokeWidth={1.1}
+            strokeLinejoin="round"
+          />
+          <polygon points={`0,-88 17,-70 -17,-70`} fill={shade(ink, 94)} stroke={KEYLINE} strokeWidth={1.2} strokeLinejoin="round" />
+          <circle cx={0} cy={-65} r={3} fill="var(--yellow)" stroke={KEYLINE} strokeWidth={1} />
         </g>
       );
 
@@ -354,7 +503,17 @@ export function BuildingSprite({ id, ink }: { id: string; ink: string }) {
 }
 
 /** Miniatura para la paleta de construcción y las listas. */
-export function BuildingThumb({ id, ink, size = 56 }: { id: string; ink: string; size?: number }) {
+export function BuildingThumb({
+  id,
+  ink,
+  size = 56,
+  integrity = 100,
+}: {
+  id: string;
+  ink: string;
+  size?: number;
+  integrity?: number;
+}) {
   return (
     <svg
       viewBox="-40 -100 80 120"
@@ -364,7 +523,7 @@ export function BuildingThumb({ id, ink, size = 56 }: { id: string; ink: string;
       style={{ overflow: "visible" }}
     >
       <g className="ink-plate">
-        <BuildingSprite id={id} ink={ink} />
+        <BuildingSprite id={id} ink={ink} integrity={integrity} />
       </g>
     </svg>
   );

@@ -30,6 +30,76 @@ export function levelProgress(xp: number) {
   };
 }
 
+/* Supervivencia --------------------------------------------------------------
+   La amenaza sube cuando quedan hábitos sin marcar y baja con los días
+   redondos. A 100 entra un pueblo saqueador.
+   -------------------------------------------------------------------------- */
+
+export const THREAT_RAID = 100;
+export const DEFENSE_BASE = 30;
+
+/** Cuánto subiría la amenaza si el día de hoy se cerrase ahora mismo. */
+export function threatDelta(habits: number, marks: number): number {
+  if (habits <= 0) return 0;
+  const falta = Math.max(0, habits - marks);
+  return falta === 0 ? -25 : Math.floor((25 * falta) / habits);
+}
+
+export type ThreatBand = {
+  key: "calma" | "inquietud" | "aviso" | "inminente";
+  label: string;
+  blurb: string;
+  ink: string;
+};
+
+export function threatBand(threat: number): ThreatBand {
+  if (threat >= 75)
+    return {
+      key: "inminente",
+      label: "Asalto inminente",
+      blurb: "Están a las puertas. Marcad hoy o entrarán.",
+      ink: "var(--pink)",
+    };
+  if (threat >= 45)
+    return {
+      key: "aviso",
+      label: "Se acercan",
+      blurb: "Los vigías los ven venir. Otro día flojo y entran.",
+      ink: "var(--yellow)",
+    };
+  if (threat >= 20)
+    return {
+      key: "inquietud",
+      label: "Inquietud",
+      blurb: "Se oyen cosas en el camino. Nada grave todavía.",
+      ink: "var(--blue)",
+    };
+  return {
+    key: "calma",
+    label: "Calma",
+    blurb: "Nadie ronda la ciudad. Seguid así.",
+    ink: "var(--green)",
+  };
+}
+
+/** Defensa que puede oponer la ciudad. Espejo de public.city_defense. */
+export function cityDefense(
+  tiles: { building_id: string; integrity: number }[],
+  buildings: Map<string, { defense: number }>,
+  marksLastWeek: number,
+): number {
+  const fromBuildings = tiles.reduce((sum, t) => {
+    const def = buildings.get(t.building_id)?.defense ?? 0;
+    return sum + Math.floor((def * t.integrity) / 100);
+  }, 0);
+  return DEFENSE_BASE + fromBuildings + marksLastWeek * 2;
+}
+
+/** Lo que cuesta dejar entero un edificio dañado. */
+export function repairCost(cost: number, integrity: number): number {
+  return Math.max(5, Math.floor((cost * (100 - integrity)) / 200));
+}
+
 /** Lo que otorga marcar un hábito, dada la racha que quedaría. */
 export function rewardFor(streak: number) {
   const capped = Math.min(streak - 1, 10);

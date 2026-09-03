@@ -15,6 +15,8 @@ export type Group = {
   created_by: string;
   coins: number;
   xp: number;
+  threat: number;
+  last_settled_on: string;
   created_at: string;
 };
 
@@ -56,6 +58,7 @@ export type Building = {
   ink: Ink;
   category: string;
   reward_only: boolean;
+  defense: number;
 };
 
 export type CityTile = {
@@ -64,6 +67,7 @@ export type CityTile = {
   y: number;
   building_id: string;
   placed_by: string | null;
+  integrity: number;
   created_at: string;
 };
 
@@ -78,6 +82,18 @@ export type Challenge = {
   reward_building_id: string | null;
   completed_at: string | null;
   completed_by: string | null;
+  created_at: string;
+};
+
+export type Raid = {
+  id: string;
+  group_id: string;
+  happened_on: string;
+  raider: string;
+  power: number;
+  defense: number;
+  repelled: boolean;
+  buildings_hit: number;
   created_at: string;
 };
 
@@ -103,6 +119,7 @@ export type Database = {
         Pick<HabitLog, "habit_id" | "user_id" | "log_date"> & Partial<HabitLog>
       >;
       buildings: Table<Building>;
+      raids: Table<Raid>;
       city_tiles: Table<CityTile>;
       challenges: Table<
         Challenge,
@@ -124,6 +141,12 @@ export type Database = {
       };
       claim_challenge: { Args: { p_challenge: string }; Returns: undefined };
       city_level: { Args: { p_xp: number }; Returns: number };
+      settle_city: { Args: { p_group: string }; Returns: number };
+      city_defense: { Args: { p_group: string; p_on?: string | null }; Returns: number };
+      repair_building: {
+        Args: { p_group: string; p_x: number; p_y: number };
+        Returns: undefined;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

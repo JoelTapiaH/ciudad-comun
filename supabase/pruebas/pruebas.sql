@@ -219,7 +219,7 @@ begin
   select count(*) into n from public.groups;      perform assert(n = 1, 'un miembro ve su ciudad');
   select count(*) into n from public.habits;      perform assert(n = 2, 'un miembro ve los hábitos de todos');
   select count(*) into n from public.group_members; perform assert(n = 2, 'un miembro ve a sus compañeros');
-  select count(*) into n from public.buildings;   perform assert(n = 15, 'el catálogo es público para quien entra');
+  select count(*) into n from public.buildings;   perform assert(n = 18, 'el catálogo es público para quien entra');
 
   -- Pero no toca los hábitos ajenos: RLS filtra el DELETE en silencio,
   -- así que lo que hay que comprobar es que no se borró nada.
@@ -233,4 +233,95 @@ begin
 exception when others then
   execute 'reset role';
   raise;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Supervivencia: amenaza, asaltos, daños y reparación
+-- ---------------------------------------------------------------------------
+reset role;
+
+do $$
+declare
+  a uuid := '44444444-4444-4444-4444-444444444444';
+  g uuid;
+  h uuid;
+  hoy date := (now() at time zone 'utc')::date;
+  n int;
+  v_int int;
+  v_coins int;
+  v_amenaza int;
+begin
+  insert into auth.users (id, email, raw_user_meta_data)
+    values (a, 'dani@ejemplo.com', '{"display_name":"Dani"}');
+  perform set_config('request.jwt.claim.sub', a::text, true);
+
+  g := public.create_group('Los descuidados', 'Puerto Ruina');
+  insert into public.habits (group_id, user_id, name) values (g, a, 'Correr') returning id into h;
+
+  -- El hábito tiene que existir ya en los días que se liquidan
+  update public.habits set created_at = now() - interval '30 days' where id = h;
+  delete from public.challenges where group_id = g;   -- el reto semilla aparte
+
+  -- 1. Sin días cerrados pendientes no pasa nada
+  perform assert(public.settle_city(g) = 0, 'sin días pendientes no hay asaltos');
+
+  -- 2. Diez días sin marcar nada: la amenaza sube y entran
+  update public.groups set last_settled_on = hoy - 11, threat = 0 where id = g;
+  n := public.settle_city(g);
+  select threat into v_amenaza from public.groups where id = g;
+  perform assert(n > 0, 'abandonar la ciudad diez días trae asaltos');
+  perform assert((select count(*) from public.raids where group_id = g) = n, 'cada asalto queda en la crónica');
+  perform assert(v_amenaza between 30 and 99, 'tras el asalto la amenaza baja pero no desaparece');
+  perform assert(
+    (select count(*) from public.city_tiles where group_id = g and integrity < 100) > 0,
+    'un asalto que no se rechaza deja edificios dañados');
+
+  -- 3. No se liquida dos veces lo mismo
+  perform assert(public.settle_city(g) = 0, 'liquidar de nuevo no repite los asaltos');
+
+  -- 4. Reparar cuesta y deja el edificio entero
+  select integrity into v_int from public.city_tiles
+    where group_id = g and integrity < 100 order by integrity limit 1;
+  update public.groups set coins = 5000 where id = g;
+  select coins into v_coins from public.groups where id = g;
+  perform public.repair_building(g,
+    (select x from public.city_tiles where group_id = g and integrity < 100 order by integrity, x limit 1),
+    (select y from public.city_tiles where group_id = g and integrity < 100 order by integrity, x limit 1));
+  perform assert((select coins from public.groups where id = g) < v_coins, 'reparar cuesta monedas');
+  perform assert_raises(
+    format('select public.repair_building(%L, 4, 4)', g),
+    'está entera', 'no se repara lo que no está roto');
+
+  -- 5. Marcar todos los días mantiene la ciudad en calma
+  -- (siete días: el trigger no deja registrar más atrás)
+  update public.groups set last_settled_on = hoy - 8, threat = 0 where id = g;
+  delete from public.raids where group_id = g;
+  for n in 1..7 loop
+    insert into public.habit_logs (habit_id, user_id, log_date) values (h, a, hoy - n);
+  end loop;
+  perform assert(public.settle_city(g) = 0, 'cumpliendo cada día no entra nadie');
+  perform assert((select threat from public.groups where id = g) = 0, 'cumpliendo cada día la amenaza queda a cero');
+
+  -- 6. Un reto vencido sin cumplir dispara el asalto por sí solo
+  update public.groups set last_settled_on = hoy - 3, threat = 0 where id = g;
+  insert into public.challenges (group_id, title, goal, starts_on, ends_on)
+    values (g, 'Reto imposible', 9999, hoy - 3, hoy - 2);
+  perform assert(public.settle_city(g) > 0, 'fallar un reto trae a los saqueadores');
+
+  -- 7. La defensa suma lo de los edificios defensivos
+  update public.groups set coins = 5000, xp = 1500 where id = g;
+  select public.city_defense(g) into n;
+  perform public.place_building(g, 0, 9, 'watchtower');
+  perform assert(public.city_defense(g) = n + 70, 'la torre de vigía suma 70 de defensa');
+
+  -- 8. Un edificio en ruinas no defiende
+  update public.city_tiles set integrity = 0 where group_id = g and x = 0 and y = 9;
+  perform assert(public.city_defense(g) = n, 'en ruinas, la torre no defiende');
+
+  -- 9. Derribar unas ruinas no devuelve nada
+  select coins into v_coins from public.groups where id = g;
+  perform public.demolish_building(g, 0, 9);
+  perform assert((select coins from public.groups where id = g) = v_coins, 'de unas ruinas no se recupera nada');
+
+  raise notice '--- supervivencia: todo correcto ---';
 end $$;
