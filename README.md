@@ -139,6 +139,20 @@ El esquema tiene 71 comprobaciones automáticas —rachas, economía, construcci
 retos, asaltos, daños, reparación y RLS— que se ejecutan contra un Postgres
 desechable:
 
+### Probar los asaltos sin esperar
+
+Con un solo proyecto de Supabase, local y producción comparten base de datos.
+Para ver la mecánica de supervivencia sin esperar días hay dos ayudas en
+[`supabase/utilidades/`](supabase/utilidades):
+
+| Archivo | Para qué |
+| --- | --- |
+| `probar-asalto.sql` | Sube la amenaza y deja un día sin liquidar: al recargar la app entra un asalto |
+| `restaurar-ciudad.sql` | Repara todo, pone la amenaza a cero y borra la crónica |
+
+Se pegan en el SQL Editor de Supabase. Ojo: `restaurar-ciudad.sql` actúa sobre
+todos los grupos de la base de datos.
+
 ```bash
 brew install postgresql@16
 PGBIN=/opt/homebrew/opt/postgresql@16/bin ./supabase/pruebas/ejecutar.sh
