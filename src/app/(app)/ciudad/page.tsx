@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import CityCanvas from "@/components/CityCanvas";
+import KeepCard from "@/components/KeepCard";
 import RaidChronicle from "@/components/RaidChronicle";
 import ThreatPanel from "@/components/ThreatPanel";
 import {
@@ -29,6 +30,8 @@ export default async function CiudadPage() {
   const level = cityLevel(group.xp);
   const nextUnlock = buildings.find((b) => !b.reward_only && b.min_level === level + 1);
   const defense = cityDefense(tiles, new Map(buildings.map((b) => [b.id, b])), weekMarks);
+  const keep = tiles.find((t) => t.building_id === "keep") ?? null;
+  const keepCost = buildings.find((b) => b.id === "keep")?.cost ?? 0;
   const ruins = tiles.filter((t) => t.integrity <= 0).length;
   const damaged = tiles.filter((t) => t.integrity > 0 && t.integrity < 100).length;
 
@@ -43,6 +46,8 @@ export default async function CiudadPage() {
         buildings={buildings}
         builderNames={builderNames}
       />
+
+      <KeepCard integrity={keep ? keep.integrity : null} threat={group.threat} keepCost={keepCost} />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
         <ThreatPanel
@@ -86,9 +91,11 @@ export default async function CiudadPage() {
       </div>
 
       <p className="text-sm text-ink-60">
-        Los edificios defensivos (⛊) son lo único que suma a la defensa, junto con las marcas de la
-        última semana. Reparar cuesta la mitad de lo destrozado; derribar unas ruinas no devuelve
-        nada. Los monumentos y el faro no se compran: salen de completar retos, y también defienden.
+        Solo las construcciones defensivas (⛊) suman a la defensa, junto con las marcas de la última
+        semana, que pesan lo mismo que la piedra. Y se desgastan: pierden 4 de integridad al día, y
+        8 más cada vez que rechazan un asalto. Mantenerlas exige volver, no comprarlas una vez.
+        Reparar cuesta la mitad de lo destrozado; de unas ruinas no se recupera nada. El Alcázar no
+        se compra ni se derriba.
       </p>
     </div>
   );

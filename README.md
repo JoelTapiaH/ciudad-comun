@@ -4,10 +4,12 @@ Registro de hábitos en grupo. Cada marca que hace cualquier miembro alimenta la
 misma caja de monedas, y con esas monedas el grupo levanta **una sola ciudad**
 sobre una cuadrícula isométrica.
 
-Pero la ciudad no solo se construye: **hay que mantenerla en pie**. Los días que
-quedan hábitos sin marcar suben la amenaza, y cuando llega a 100 entra un pueblo
-saqueador. Si la defensa aguanta se le rechaza; si no, los edificios se agrietan
-y acaban en ruinas. Fallar un reto convoca el asalto por sí solo.
+Pero la ciudad no solo se construye: **hay que mantenerla en pie**. En el centro
+está el Alcázar, donde viven el príncipe Adiel, su esposa Nara y los mellizos.
+Los días que quedan hábitos sin marcar suben la amenaza, y cuando llega a 60
+entra un pueblo saqueador. Los golpes caen primero en lo que hayáis levantado
+alrededor: **mientras quede una muralla en pie, nadie llega a la casa**. El
+Alcázar no se compra ni se derriba, y es lo último que cae.
 
 - **Web:** Next.js 16 (App Router) + React 19 + Tailwind v4
 - **Datos y sesión:** Supabase (Postgres, Auth, Realtime, RLS)
@@ -104,19 +106,46 @@ A partir de aquí, cada `git push` a `main` vuelve a desplegar solo.
 
 | Situación | Efecto sobre la amenaza |
 | --- | --- |
-| Día con todos los hábitos marcados | **−25** |
-| Día con huecos | **+25 × (huecos / hábitos)**. Dejarse uno de cuatro no pesa como abandonarlos todos |
-| Un reto vence sin cumplirse | **+100**: entran seguro |
-| Amenaza ≥ 100 | Asalto. Después baja a 40 si se rechaza, a 30 si entran |
+| Día con todos los hábitos marcados | **−20** |
+| Día con huecos | **+30 × (huecos / hábitos)**. Subir cuesta más que bajar |
+| Un reto vence sin cumplirse | **+60**: entran seguro |
+| Amenaza ≥ 60 | Asalto. Después baja a 35 si se rechaza, a 25 si entran |
 
-La **defensa** es 30 de base, más lo que aportan los edificios defensivos (a
-prorrata de su integridad), más 2 por cada marca de los últimos 7 días. Solo la
-empalizada, la muralla, la torre de vigía, el monumento y el faro defienden.
+La **defensa** es 20 de base, más lo que aportan las construcciones defensivas
+(a prorrata de su integridad), más **3 por cada marca de los últimos 7 días**.
+Las murallas solas no bastan: una semana floja deja la guarnición sin gente
+aunque la piedra siga en pie.
+
+Y las defensas **se desgastan**: pierden 4 de integridad al día, y 8 más cada
+vez que rechazan un asalto. Mantenerlas exige volver, no comprarlas una vez.
+Sin reparaciones, una ciudad amurallada acaba cediendo. El Alcázar es la
+excepción: no se desgasta solo.
 
 Si el asalto entra, golpea una construcción por cada 25 puntos de daño (máximo
 6), y cada golpe se lleva 50 de integridad. A 0 queda en ruinas: no defiende,
 no se derriba con provecho, y hay que reconstruirla. **Reparar** cuesta la mitad
 de lo destrozado.
+
+### El arsenal
+
+De 27 construcciones, 14 defienden. Las civiles dan monedas y XP, pero no
+aguantan un asalto.
+
+| | Coste | Nivel | Defensa |
+| --- | --- | --- | --- |
+| Empalizada | 60 | 1 | 15 |
+| Foso | 85 | 1 | 22 |
+| Muralla | 140 | 2 | 35 |
+| Puerta fortificada | 170 | 2 | 42 |
+| Torre de arqueros | 195 | 2 | 52 |
+| Herrería | 210 | 2 | 30 |
+| Torre de vigía | 240 | 3 | 68 |
+| Armería | 275 | 3 | 78 |
+| Cuartel | 320 | 3 | 92 |
+| Ballesta | 360 | 4 | 108 |
+| Catapulta | 430 | 4 | 130 |
+| Alcázar | — | — | 15 |
+| Monumento · Faro | solo por retos | | 45 · 60 |
 
 La liquidación **no usa temporizador**: al abrir la app, `settle_city()` cierra
 de golpe los días pendientes (hasta 60). Funciona igual si entras cada día que
@@ -135,9 +164,9 @@ grupos a los que perteneces, y solo puedes marcar o borrar tus propios hábitos.
 
 ## Pruebas
 
-El esquema tiene 71 comprobaciones automáticas —rachas, economía, construcción,
-retos, asaltos, daños, reparación y RLS— que se ejecutan contra un Postgres
-desechable:
+El esquema tiene 83 comprobaciones automáticas —rachas, economía, construcción,
+retos, asaltos, daños, desgaste, protección del Alcázar, reparación y RLS— que
+se ejecutan contra un Postgres desechable:
 
 ### Probar los asaltos sin esperar
 
@@ -187,10 +216,12 @@ src/
     CityCanvas.tsx        Cuadrícula interactiva con Realtime
     HabitBoard.tsx        Tablero del día con marcado optimista
     ThreatPanel.tsx       Estado del asedio: amenaza, defensa y pronóstico
+    KeepCard.tsx          El Alcázar y quién vive dentro
     RaidAlert.tsx         Qué pasó mientras nadie miraba
     RaidChronicle.tsx     Historial de asaltos
   lib/
     game.ts               Reglas del juego (espejo de las de Postgres)
+    story.ts              La familia del Alcázar y la voz de la crónica
     data.ts               Consultas del servidor
     supabase/             Clientes de navegador, servidor y proxy
   proxy.ts                Refresco de sesión y redirección a /entrar

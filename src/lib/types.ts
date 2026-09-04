@@ -94,6 +94,7 @@ export type Raid = {
   defense: number;
   repelled: boolean;
   buildings_hit: number;
+  reached_keep: boolean;
   created_at: string;
 };
 

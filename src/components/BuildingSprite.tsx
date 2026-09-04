@@ -274,6 +274,188 @@ function Silhouette({ id, ink }: { id: string; ink: string }) {
         </g>
       );
 
+    // ---- El hogar --------------------------------------------------------
+    case "keep":
+      return (
+        <g>
+          <Box s={0.98} h={10} ink={ink} />
+          {/* Dos torreones flanqueando el cuerpo central */}
+          {[-1, 1].map((d) => (
+            <g key={d} transform={`translate(${d * 20} ${d * 10 - 10})`}>
+              <polygon
+                points="-8,0 0,4 8,0 8,-30 0,-34 -8,-30"
+                fill={shade(ink, d < 0 ? 58 : 86)}
+                stroke={KEYLINE}
+                strokeWidth={1.1}
+                strokeLinejoin="round"
+              />
+              <polygon points="0,-48 10,-34 -10,-34" fill={shade(ink, 94)} stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
+            </g>
+          ))}
+          <Box s={0.56} h={40} lift={10} ink={ink} windows={{ cols: 2, rows: 2 }} />
+          <polygon points={diamond(0.66, 51)} fill={ink} stroke={KEYLINE} strokeWidth={1.2} strokeLinejoin="round" />
+          <polygon points={`0,-84 ${HW * 0.5},-51 ${-HW * 0.5},-51`} fill={shade(ink, 92)} stroke={KEYLINE} strokeWidth={1.2} strokeLinejoin="round" />
+          {/* El estandarte: mientras ondee, la familia sigue dentro */}
+          <line x1={0} y1={-84} x2={0} y2={-100} stroke={KEYLINE} strokeWidth={1.8} />
+          <polygon points="0,-100 18,-94 0,-88" fill="var(--yellow)" stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
+          {/* Luz encendida en la ventana baja */}
+          <rect x={-4} y={-24} width={8} height={7} fill="var(--yellow)" stroke={KEYLINE} strokeWidth={1} />
+        </g>
+      );
+
+    // ---- Defensa ---------------------------------------------------------
+    case "ditch":
+      return (
+        <g>
+          {/* Terreno, zanja excavada y agua: tres tonos para que se lea el
+              hueco. Con un solo diamante oscuro desaparecía sobre fondo oscuro. */}
+          <polygon points={diamond(1)} fill={tint(ink, 40)} stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
+          <polygon points={diamond(0.82)} fill={shade(ink, 22)} stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
+          <polygon points={diamond(0.66)} fill={tint(ink, 78)} stroke={KEYLINE} strokeWidth={1} strokeLinejoin="round" />
+          <path d={`M${-HW * 0.4} -3 q ${HW * 0.2} 4 ${HW * 0.4} 0`} fill="none" stroke="var(--card)" strokeWidth={1.6} opacity={0.7} />
+          {/* Isleta central: da profundidad al hueco */}
+          <Box s={0.34} h={7} ink={ink} />
+          {/* Estacas clavadas en el borde */}
+          {[[-HW * 0.62, 0], [HW * 0.62, 0], [0, -HH * 0.62], [0, HH * 0.62]].map(([px, py], i) => (
+            <polygon
+              key={i}
+              points={`${px - 3},${py} ${px + 3},${py} ${px},${py - 14}`}
+              fill={shade(ink, 88)}
+              stroke={KEYLINE}
+              strokeWidth={1}
+              strokeLinejoin="round"
+            />
+          ))}
+        </g>
+      );
+
+    case "gate":
+      return (
+        <g>
+          <Box s={0.94} h={8} ink={ink} />
+          {[-1, 1].map((d) => (
+            <g key={d} transform={`translate(${d * 22} ${d * 11 - 8})`}>
+              <polygon points="-7,0 0,3.5 7,0 7,-32 0,-35.5 -7,-32" fill={shade(ink, d < 0 ? 55 : 88)} stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
+              <polygon points="-8,-32 0,-28.5 8,-32 8,-40 0,-43.5 -8,-40" fill={ink} stroke={KEYLINE} strokeWidth={1} strokeLinejoin="round" />
+            </g>
+          ))}
+          <polygon points="-14,-4 0,3 14,-4 14,-26 0,-33 -14,-26" fill={shade(ink, 72)} stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
+          {/* El arco: la puerta propiamente dicha */}
+          <path d="M-7 -3 L-7 -17 Q0 -25 7 -17 L7 -10 L0 -6 Z" fill={KEYLINE} opacity={0.75} />
+        </g>
+      );
+
+    case "archers":
+      return (
+        <g>
+          <Box s={0.8} h={7} ink={ink} />
+          <Box s={0.5} h={42} lift={7} ink={ink} />
+          {/* Saeteras: las ranuras por donde se dispara */}
+          {[16, 28, 40].map((y) => (
+            <g key={y}>
+              <rect x={3} y={-y} width={3} height={8} fill={KEYLINE} opacity={0.8} />
+              <rect x={-6} y={-y + 3} width={3} height={8} fill={KEYLINE} opacity={0.55} />
+            </g>
+          ))}
+          <polygon points={diamond(0.62, 49)} fill={ink} stroke={KEYLINE} strokeWidth={1.2} strokeLinejoin="round" />
+          {[-1, 0, 1].map((i) => (
+            <polygon
+              key={i}
+              points={`${i * 12 - 4},${-49 + i * 6} ${i * 12},${-47 + i * 6} ${i * 12 + 4},${-49 + i * 6} ${i * 12 + 4},${-58 + i * 6} ${i * 12},${-60 + i * 6} ${i * 12 - 4},${-58 + i * 6}`}
+              fill={shade(ink, 92)}
+              stroke={KEYLINE}
+              strokeWidth={1}
+              strokeLinejoin="round"
+            />
+          ))}
+        </g>
+      );
+
+    case "forge":
+      return (
+        <g>
+          <Box s={0.86} h={20} ink={ink} />
+          <polygon points={diamond(0.9, 21)} fill={shade(ink, 80)} stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
+          {/* Chimenea y fragua encendida */}
+          <polygon points="10,-21 18,-25 18,-48 10,-44" fill={shade(ink, 60)} stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
+          <polygon points="18,-25 26,-21 26,-44 18,-48" fill={shade(ink, 88)} stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
+          <ellipse cx={18} cy={-52} rx={7} ry={4} fill={KEYLINE} opacity={0.3} />
+          <rect x={-10} y={-16} width={11} height={10} fill="var(--yellow)" stroke={KEYLINE} strokeWidth={1.1} />
+          <path d="M-16 -22 l5 -5 l-3 -5" fill="none" stroke={KEYLINE} strokeWidth={1.4} strokeLinecap="round" />
+        </g>
+      );
+
+    case "armory":
+      return (
+        <g>
+          <Box s={0.9} h={26} ink={ink} />
+          <polygon points={diamond(0.94, 27)} fill={shade(ink, 82)} stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
+          {/* Escudo y espadas cruzadas sobre la fachada */}
+          <g transform="translate(15 -16)">
+            <path d="M0 -13 L9 -9 L9 0 Q9 7 0 11 Q-9 7 -9 0 L-9 -9 Z" fill="var(--yellow)" stroke={KEYLINE} strokeWidth={1.2} strokeLinejoin="round" />
+            <line x1={-6} y1={-6} x2={6} y2={6} stroke={KEYLINE} strokeWidth={1.6} />
+            <line x1={6} y1={-6} x2={-6} y2={6} stroke={KEYLINE} strokeWidth={1.6} />
+          </g>
+          <rect x={-20} y={-20} width={9} height={13} fill={KEYLINE} opacity={0.6} />
+        </g>
+      );
+
+    case "barracks":
+      return (
+        <g>
+          <Box s={0.96} h={18} ink={ink} />
+          <Gable s={0.96} base={18} peak={9} ink={ink} />
+          {/* Fila de puertas: la tropa duerme aquí */}
+          {[0.28, 0.5, 0.72].map((t) => (
+            <rect
+              key={t}
+              x={t * HW * 0.9 - 3}
+              y={HH * 0.9 - t * HH * 0.9 - 13}
+              width={6}
+              height={11}
+              fill={KEYLINE}
+              opacity={0.65}
+            />
+          ))}
+          <line x1={-24} y1={-14} x2={-24} y2={-38} stroke={KEYLINE} strokeWidth={1.8} />
+          <polygon points="-24,-38 -8,-33 -24,-28" fill="var(--yellow)" stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
+        </g>
+      );
+
+    case "ballista":
+      return (
+        <g>
+          <Box s={0.86} h={9} ink={ink} />
+          {/* Cureña apuntando por la diagonal, para que se vea el arma entera */}
+          <polygon points="-20,-11 -14,-8 26,-30 20,-33" fill={shade(ink, 60)} stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
+          <polygon points="-14,-16 -8,-13 -8,-6 -14,-9" fill={shade(ink, 40)} stroke={KEYLINE} strokeWidth={1} />
+          {/* Los dos brazos del arco, abiertos y bien visibles */}
+          <path d="M6 -46 Q16 -30 8 -14" fill="none" stroke={shade(ink, 96)} strokeWidth={4.5} strokeLinecap="round" />
+          <path d="M34 -32 Q22 -26 8 -14" fill="none" stroke={shade(ink, 96)} strokeWidth={4.5} strokeLinecap="round" />
+          {/* Cuerda tensada entre las puntas */}
+          <line x1={6} y1={-46} x2={34} y2={-32} stroke={KEYLINE} strokeWidth={1.6} />
+          {/* Virote montado, apuntando hacia fuera */}
+          <line x1={2} y1={-24} x2={30} y2={-40} stroke={KEYLINE} strokeWidth={2.6} strokeLinecap="round" />
+          <polygon points="38,-44 28,-44 31,-35" fill="var(--yellow)" stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
+        </g>
+      );
+
+    case "catapult":
+      return (
+        <g>
+          <Box s={0.9} h={8} ink={ink} />
+          <polygon points="-16,-8 0,-0 16,-8 16,-16 0,-24 -16,-16" fill={shade(ink, 68)} stroke={KEYLINE} strokeWidth={1.1} strokeLinejoin="round" />
+          {/* Brazo lanzador y contrapeso */}
+          <line x1={-14} y1={-16} x2={20} y2={-56} stroke={shade(ink, 96)} strokeWidth={5} strokeLinecap="round" />
+          <line x1={-14} y1={-16} x2={20} y2={-56} stroke={KEYLINE} strokeWidth={1.2} />
+          <circle cx={23} cy={-59} r={7} fill="var(--yellow)" stroke={KEYLINE} strokeWidth={1.2} />
+          <rect x={-22} y={-26} width={12} height={12} rx={1} fill={shade(ink, 45)} stroke={KEYLINE} strokeWidth={1.1} />
+          <line x1={-4} y1={-24} x2={-4} y2={-40} stroke={KEYLINE} strokeWidth={2} />
+          <line x1={8} y1={-24} x2={8} y2={-40} stroke={KEYLINE} strokeWidth={2} />
+          <line x1={-4} y1={-40} x2={8} y2={-40} stroke={KEYLINE} strokeWidth={2} />
+        </g>
+      );
+
     case "palisade":
       return (
         <g>

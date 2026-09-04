@@ -219,7 +219,7 @@ begin
   select count(*) into n from public.groups;      perform assert(n = 1, 'un miembro ve su ciudad');
   select count(*) into n from public.habits;      perform assert(n = 2, 'un miembro ve los hábitos de todos');
   select count(*) into n from public.group_members; perform assert(n = 2, 'un miembro ve a sus compañeros');
-  select count(*) into n from public.buildings;   perform assert(n = 18, 'el catálogo es público para quien entra');
+  select count(*) into n from public.buildings;   perform assert(n = 27, 'el catálogo es público para quien entra');
 
   -- Pero no toca los hábitos ajenos: RLS filtra el DELETE en silencio,
   -- así que lo que hay que comprobar es que no se borró nada.
@@ -250,6 +250,8 @@ declare
   v_int int;
   v_coins int;
   v_amenaza int;
+  v_x int;
+  v_y int;
 begin
   insert into auth.users (id, email, raw_user_meta_data)
     values (a, 'dani@ejemplo.com', '{"display_name":"Dani"}');
@@ -271,7 +273,7 @@ begin
   select threat into v_amenaza from public.groups where id = g;
   perform assert(n > 0, 'abandonar la ciudad diez días trae asaltos');
   perform assert((select count(*) from public.raids where group_id = g) = n, 'cada asalto queda en la crónica');
-  perform assert(v_amenaza between 30 and 99, 'tras el asalto la amenaza baja pero no desaparece');
+  perform assert(v_amenaza between 20 and 59, 'tras el asalto la amenaza baja pero no desaparece');
   perform assert(
     (select count(*) from public.city_tiles where group_id = g and integrity < 100) > 0,
     'un asalto que no se rechaza deja edificios dañados');
@@ -279,18 +281,26 @@ begin
   -- 3. No se liquida dos veces lo mismo
   perform assert(public.settle_city(g) = 0, 'liquidar de nuevo no repite los asaltos');
 
-  -- 4. Reparar cuesta y deja el edificio entero
-  select integrity into v_int from public.city_tiles
-    where group_id = g and integrity < 100 order by integrity limit 1;
+  -- 4. Reparar cuesta, deja el edificio entero y no se repite
+  -- (x e y de la MISMA fila: con dos subconsultas podían salir de parcelas
+  -- distintas y la prueba mentía)
+  select x, y, integrity into v_x, v_y, v_int
+    from public.city_tiles
+   where group_id = g and integrity < 100
+   order by integrity, x, y limit 1;
+  perform assert(v_x is not null, 'el asalto dejó algo que reparar');
+
   update public.groups set coins = 5000 where id = g;
   select coins into v_coins from public.groups where id = g;
-  perform public.repair_building(g,
-    (select x from public.city_tiles where group_id = g and integrity < 100 order by integrity, x limit 1),
-    (select y from public.city_tiles where group_id = g and integrity < 100 order by integrity, x limit 1));
+  perform public.repair_building(g, v_x, v_y);
+
   perform assert((select coins from public.groups where id = g) < v_coins, 'reparar cuesta monedas');
+  perform assert(
+    (select integrity from public.city_tiles where group_id = g and x = v_x and y = v_y) = 100,
+    'reparar deja el edificio entero');
   perform assert_raises(
-    format('select public.repair_building(%L, 4, 4)', g),
-    'está entera', 'no se repara lo que no está roto');
+    format('select public.repair_building(%L, %s, %s)', g, v_x, v_y),
+    'está entera', 'no se repara lo que ya está entero');
 
   -- 5. Marcar todos los días mantiene la ciudad en calma
   -- (siete días: el trigger no deja registrar más atrás)
@@ -312,7 +322,7 @@ begin
   update public.groups set coins = 5000, xp = 1500 where id = g;
   select public.city_defense(g) into n;
   perform public.place_building(g, 0, 9, 'watchtower');
-  perform assert(public.city_defense(g) = n + 70, 'la torre de vigía suma 70 de defensa');
+  perform assert(public.city_defense(g) = n + 68, 'la torre de vigía suma 68 de defensa');
 
   -- 8. Un edificio en ruinas no defiende
   update public.city_tiles set integrity = 0 where group_id = g and x = 0 and y = 9;
@@ -322,6 +332,72 @@ begin
   select coins into v_coins from public.groups where id = g;
   perform public.demolish_building(g, 0, 9);
   perform assert((select coins from public.groups where id = g) = v_coins, 'de unas ruinas no se recupera nada');
+
+  -- 10. El Alcázar existe y no se derriba
+  perform assert(
+    (select count(*) from public.city_tiles where group_id = g and building_id = 'keep') = 1,
+    'toda ciudad nace con su Alcázar');
+  perform assert_raises(
+    format('select public.demolish_building(%L, 4, 4)', g),
+    'no se derriba', 'el Alcázar no se puede derribar');
+
+  -- 11. Con murallas en pie, los golpes caen en ellas y no en la familia
+  delete from public.city_tiles where group_id = g and building_id <> 'keep';
+  delete from public.raids where group_id = g;
+  delete from public.challenges where group_id = g;
+  delete from public.habit_logs where group_id = g;
+  update public.city_tiles set integrity = 100 where group_id = g;
+  update public.groups set coins = 9000, xp = 1500, threat = 0, last_settled_on = hoy - 5 where id = g;
+  perform public.place_building(g, 0, 0, 'wall');
+  perform public.place_building(g, 1, 0, 'wall');
+  perform public.place_building(g, 2, 0, 'wall');
+  perform public.settle_city(g);
+
+  perform assert(
+    (select integrity from public.city_tiles where group_id = g and building_id = 'keep') = 100,
+    'mientras quedan murallas, el Alcázar no recibe un golpe');
+  perform assert(
+    (select count(*) from public.city_tiles
+      where group_id = g and building_id <> 'keep' and integrity < 100) = 3,
+    'las murallas se llevan los golpes y el desgaste');
+  perform assert(
+    (select count(*) from public.raids where group_id = g and repelled) > 0,
+    'con murallas se rechazan los asaltos');
+
+  -- 12. Sin nada que interponer, la familia queda expuesta
+  delete from public.city_tiles where group_id = g and building_id <> 'keep';
+  delete from public.raids where group_id = g;
+  update public.city_tiles set integrity = 100 where group_id = g;
+  update public.groups set threat = 0, last_settled_on = hoy - 8 where id = g;
+  perform public.settle_city(g);
+
+  perform assert(
+    (select integrity from public.city_tiles where group_id = g and building_id = 'keep') < 100,
+    'sin murallas, los golpes llegan al Alcázar');
+  perform assert(
+    (select count(*) from public.raids where group_id = g and reached_keep) > 0,
+    'la crónica registra que llegaron hasta la familia');
+
+  -- 13. Las defensas se desgastan solas aunque no venga nadie
+  delete from public.city_tiles where group_id = g and building_id <> 'keep';
+  delete from public.raids where group_id = g;
+  update public.city_tiles set integrity = 100 where group_id = g;
+  update public.groups set coins = 9000, threat = 0, last_settled_on = hoy - 5 where id = g;
+  perform public.place_building(g, 9, 9, 'wall');
+  -- Con los hábitos al día no entra nadie: así se aísla el desgaste
+  for n in 1..5 loop
+    insert into public.habit_logs (habit_id, user_id, log_date) values (h, a, hoy - n);
+  end loop;
+  perform public.settle_city(g);
+
+  perform assert((select count(*) from public.raids where group_id = g) = 0,
+    'cumpliendo cada día no entra nadie, ni con la ciudad desnuda');
+  perform assert(
+    (select integrity from public.city_tiles where group_id = g and x = 9 and y = 9) = 84,
+    'una muralla desatendida pierde 4 de integridad al día');
+  perform assert(
+    (select integrity from public.city_tiles where group_id = g and building_id = 'keep') = 100,
+    'el Alcázar no se desgasta por su cuenta');
 
   raise notice '--- supervivencia: todo correcto ---';
 end $$;

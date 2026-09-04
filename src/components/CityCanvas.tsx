@@ -62,7 +62,18 @@ export default function CityCanvas({
   useEffect(() => setXp(initialXp), [initialXp]);
 
   const level = cityLevel(xp);
-  const catalog = useMemo(() => buildings.filter((b) => !b.reward_only), [buildings]);
+  // La defensa primero: es lo que decide si la ciudad sigue en pie mañana.
+  const catalog = useMemo(() => {
+    const orden = ["defensa", "vivienda", "verde", "comercio", "salud", "cultura"];
+    return buildings
+      .filter((b) => !b.reward_only)
+      .sort(
+        (a, b) =>
+          orden.indexOf(a.category) - orden.indexOf(b.category) ||
+          a.min_level - b.min_level ||
+          a.cost - b.cost,
+      );
+  }, [buildings]);
   const byId = useMemo(() => new Map(buildings.map((b) => [b.id, b])), [buildings]);
   const occupied = useMemo(() => new Map(tiles.map((t) => [key(t.x, t.y), t])), [tiles]);
   const view = useMemo(() => isoViewBox(), []);
@@ -414,12 +425,20 @@ export default function CityCanvas({
             )}
           </div>
           <ul className="flex gap-2 overflow-x-auto pb-2">
-            {catalog.map((b) => {
+            {catalog.map((b, i) => {
+              const primeraCivil = b.category !== "defensa" && catalog[i - 1]?.category === "defensa";
               const locked = b.min_level > level;
               const tooPricey = b.cost > coins;
               const active = selected === b.id;
               return (
-                <li key={b.id} className="shrink-0">
+                <li key={b.id} className="flex shrink-0 items-stretch gap-2">
+                  {primeraCivil ? (
+                    <span
+                      aria-hidden="true"
+                      className="my-2 w-0.5 shrink-0"
+                      style={{ background: "var(--ink-12)" }}
+                    />
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => setSelected(active ? null : b.id)}

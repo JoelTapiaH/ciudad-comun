@@ -109,6 +109,7 @@ create table if not exists public.raids (
   defense       int not null,
   repelled      boolean not null,
   buildings_hit int not null default 0,
+  reached_keep  boolean not null default false,
   created_at    timestamptz not null default now()
 );
 create index if not exists raids_group_idx on public.raids (group_id, happened_on desc);
@@ -123,6 +124,7 @@ alter table public.groups     add column if not exists threat          int not n
 alter table public.groups     add column if not exists last_settled_on date not null default ((now() at time zone 'utc')::date - 1);
 alter table public.city_tiles add column if not exists integrity       int not null default 100;
 alter table public.buildings  add column if not exists defense         int not null default 0;
+alter table public.raids      add column if not exists reached_keep    boolean not null default false;
 
 do $$ begin
   alter table public.city_tiles add constraint city_tiles_integrity_ck check (integrity between 0 and 100);
@@ -132,29 +134,68 @@ exception when duplicate_object then null; end $$;
 -- Catálogo de edificios (semilla)
 -- ---------------------------------------------------------------------------
 
+-- La ciudad es una plaza fuerte: de 27 construcciones, 14 defienden. Las
+-- civiles siguen dando monedas y XP, pero no aguantan un asalto.
 insert into public.buildings (id, name, cost, min_level, ink, category, reward_only, defense) values
-  ('park',      'Parque',            40,  1, 'green',  'verde',   false,  0),
-  ('house',     'Casa',              60,  1, 'yellow', 'vivienda',false,  0),
-  ('kiosk',     'Quiosco',           75,  1, 'pink',   'comercio',false,  0),
-  ('trees',     'Arboleda',          30,  1, 'green',  'verde',   false,  0),
-  ('palisade',  'Empalizada',        70,  1, 'yellow', 'defensa', false, 18),
-  ('cafe',      'Cafetería',        110,  2, 'pink',   'comercio',false,  0),
-  ('gym',       'Gimnasio',         140,  2, 'blue',   'salud',   false,  0),
-  ('library',   'Biblioteca',       160,  2, 'blue',   'cultura', false,  0),
-  ('wall',      'Muralla',          150,  2, 'blue',   'defensa', false, 35),
-  ('fountain',  'Fuente',           130,  3, 'blue',   'verde',   false,  0),
-  ('block',     'Bloque de pisos',  220,  3, 'yellow', 'vivienda',false,  0),
-  ('clinic',    'Centro de salud',  260,  3, 'pink',   'salud',   false,  0),
-  ('watchtower','Torre de vigía',   240,  3, 'yellow', 'defensa', false, 70),
-  ('theatre',   'Teatro',           340,  4, 'pink',   'cultura', false,  0),
-  ('tower',     'Torre',            420,  4, 'blue',   'vivienda',false,  0),
-  ('stadium',   'Estadio',          600,  5, 'green',  'salud',   false,  0),
-  ('monument',  'Monumento',          0,  1, 'yellow', 'hito',    true,  40),
-  ('lighthouse','Faro',               0,  1, 'pink',   'hito',    true,  55)
+  -- El hogar. No se compra, no se derriba, y es lo último que cae.
+  ('keep',      'Alcázar',            0,  1, 'pink',   'hogar',   true,   15),
+
+  -- Defensa
+  ('palisade',  'Empalizada',        60,  1, 'yellow', 'defensa', false,  15),
+  ('ditch',     'Foso',              85,  1, 'blue',   'defensa', false,  22),
+  ('wall',      'Muralla',          140,  2, 'blue',   'defensa', false,  35),
+  ('gate',      'Puerta fortificada',170, 2, 'yellow', 'defensa', false,  42),
+  ('archers',   'Torre de arqueros',195,  2, 'pink',   'defensa', false,  52),
+  ('forge',     'Herrería',         210,  2, 'pink',   'defensa', false,  30),
+  ('watchtower','Torre de vigía',   240,  3, 'yellow', 'defensa', false,  68),
+  ('armory',    'Armería',          275,  3, 'blue',   'defensa', false,  78),
+  ('barracks',  'Cuartel',          320,  3, 'green',  'defensa', false,  92),
+  ('ballista',  'Ballesta',         360,  4, 'yellow', 'defensa', false, 108),
+  ('catapult',  'Catapulta',        430,  4, 'pink',   'defensa', false, 130),
+
+  -- Civiles: monedas y XP, ninguna protección
+  ('trees',     'Arboleda',          30,  1, 'green',  'verde',   false,   0),
+  ('park',      'Parque',            40,  1, 'green',  'verde',   false,   0),
+  ('house',     'Casa',              60,  1, 'yellow', 'vivienda',false,   0),
+  ('kiosk',     'Quiosco',           75,  1, 'pink',   'comercio',false,   0),
+  ('cafe',      'Cafetería',        110,  2, 'pink',   'comercio',false,   0),
+  ('gym',       'Gimnasio',         140,  2, 'blue',   'salud',   false,   0),
+  ('library',   'Biblioteca',       160,  2, 'blue',   'cultura', false,   0),
+  ('fountain',  'Fuente',           130,  3, 'blue',   'verde',   false,   0),
+  ('block',     'Bloque de pisos',  220,  3, 'yellow', 'vivienda',false,   0),
+  ('clinic',    'Centro de salud',  260,  3, 'pink',   'salud',   false,   0),
+  ('theatre',   'Teatro',           340,  4, 'pink',   'cultura', false,   0),
+  ('tower',     'Torre',            420,  4, 'blue',   'vivienda',false,   0),
+  ('stadium',   'Estadio',          600,  5, 'green',  'salud',   false,   0),
+
+  -- Solo por retos
+  ('monument',  'Monumento',          0,  1, 'yellow', 'hito',    true,   45),
+  ('lighthouse','Faro',               0,  1, 'pink',   'hito',    true,   60)
 on conflict (id) do update set
   name = excluded.name, cost = excluded.cost, min_level = excluded.min_level,
   ink = excluded.ink, category = excluded.category, reward_only = excluded.reward_only,
   defense = excluded.defense;
+
+-- Toda ciudad ya existente recibe su Alcázar en la parcela libre más céntrica.
+do $$
+declare r record; slot record;
+begin
+  for r in select id from public.groups loop
+    if not exists (select 1 from public.city_tiles where group_id = r.id and building_id = 'keep') then
+      select gx.x, gy.y into slot
+      from generate_series(0,9) as gx(x), generate_series(0,9) as gy(y)
+      where not exists (
+        select 1 from public.city_tiles t where t.group_id = r.id and t.x = gx.x and t.y = gy.y
+      )
+      order by abs(gx.x - 4) + abs(gy.y - 4), gx.x, gy.y
+      limit 1;
+
+      if slot.x is not null then
+        insert into public.city_tiles (group_id, x, y, building_id) values (r.id, slot.x, slot.y, 'keep');
+      end if;
+    end if;
+  end loop;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- Funciones de apoyo
@@ -313,10 +354,12 @@ begin
   insert into public.group_members (group_id, user_id, role) values (v_id, v_uid, 'owner');
 
   -- Un par de manzanas para que la ciudad no empiece vacía del todo.
+  -- El Alcázar en el centro y una primera empalizada: la ciudad nace con algo
+  -- que proteger y con algo con lo que protegerlo.
   insert into public.city_tiles (group_id, x, y, building_id, placed_by) values
-    (v_id, 4, 4, 'house', v_uid),
-    (v_id, 5, 4, 'park',  v_uid),
-    (v_id, 4, 5, 'trees', v_uid)
+    (v_id, 4, 4, 'keep',     v_uid),
+    (v_id, 5, 4, 'palisade', v_uid),
+    (v_id, 4, 5, 'trees',    v_uid)
   on conflict do nothing;
 
   -- Primer reto de la semana.
@@ -398,6 +441,10 @@ begin
   where t.group_id = p_group and t.x = p_x and t.y = p_y;
 
   if v_cost is null then raise exception 'Ahí no hay nada que derribar'; end if;
+  if exists (select 1 from public.city_tiles
+             where group_id = p_group and x = p_x and y = p_y and building_id = 'keep') then
+    raise exception 'El Alcázar no se derriba: ahí vive tu familia';
+  end if;
 
   delete from public.city_tiles where group_id = p_group and x = p_x and y = p_y;
   -- Se devuelve la mitad de lo que costó, y solo en proporción a lo que
@@ -478,11 +525,13 @@ $$;
 -- entras cada día como si vuelves después de dos semanas.
 -- ---------------------------------------------------------------------------
 
--- Lo que la ciudad puede oponer hoy: base fija, lo que aportan los edificios
--- en pie (a prorrata de su integridad) y el pulso de la última semana.
+-- Lo que la ciudad puede oponer hoy: una base pequeña, lo que aportan los
+-- edificios defensivos en pie (a prorrata de su integridad) y —con mucho
+-- peso— el pulso de la última semana. Las murallas solas no bastan: una
+-- semana floja deja la guarnición sin gente aunque la piedra siga ahí.
 create or replace function public.city_defense(p_group uuid, p_on date default null)
 returns int language sql stable security definer set search_path = public as $$
-  select 30
+  select 20
     + coalesce((
         select sum(b.defense * t.integrity / 100)::int
         from public.city_tiles t
@@ -490,7 +539,7 @@ returns int language sql stable security definer set search_path = public as $$
         where t.group_id = p_group
       ), 0)
     + coalesce((
-        select count(*)::int * 2
+        select count(*)::int * 3
         from public.habit_logs
         where group_id = p_group
           and log_date between coalesce(p_on, (now() at time zone 'utc')::date) - 6
@@ -515,6 +564,7 @@ declare
   v_golpes   int;
   v_tocados  int;
   v_nombre   text;
+  v_keep     boolean;
   v_raids    int := 0;
   pueblos    text[] := array[
     'Ceniza', 'Villa Óxido', 'Los Yermos', 'Marca Negra',
@@ -542,33 +592,58 @@ begin
     if v_habits > 0 then
       v_falta := greatest(0, v_habits - v_marks);
       -- Proporcional, no absoluto: dejarse uno de cuatro hábitos no puede
-      -- pesar lo mismo que abandonarlos todos. Un día perdido del todo sube
-      -- 25 y un día redondo baja 25, así que se compensan uno a uno.
+      -- pesar lo mismo que abandonarlos todos. Subir cuesta más que bajar
+      -- (+30 frente a −20): recuperarse de una mala racha lleva su tiempo.
       if v_falta = 0 then
-        v_threat := greatest(0, v_threat - 25);
+        v_threat := greatest(0, v_threat - 20);
       else
-        v_threat := v_threat + (25 * v_falta) / v_habits;
+        v_threat := v_threat + (30 * v_falta) / v_habits;
       end if;
     end if;
 
-    -- Un reto que vence sin cumplirse convoca el asalto por sí solo: 100 es
+    -- Las defensas se desgastan solas: la empalizada se pudre, la ballesta se
+    -- destensa. Mantenerlas exige volver, no comprarlas una vez. El Alcázar
+    -- queda fuera: es la casa, no la muralla.
+    update public.city_tiles t
+       set integrity = greatest(0, t.integrity - 4)
+      from public.buildings b
+     where b.id = t.building_id
+       and t.group_id = p_group
+       and b.defense > 0
+       and b.id <> 'keep'
+       and t.integrity > 0;
+
+    -- Un reto que vence sin cumplirse convoca el asalto por sí solo: 60 es
     -- exactamente el umbral. Que entren no significa que ganen; para eso está
     -- la defensa.
     select count(*) into v_fallidos
       from public.challenges c
       where c.group_id = p_group and c.ends_on = d and c.completed_at is null
         and public.challenge_progress(c.id) < c.goal;
-    v_threat := v_threat + v_fallidos * 100;
+    v_threat := v_threat + v_fallidos * 60;
 
-    if v_threat >= 100 then
+    if v_threat >= 60 then
       v_defensa := public.city_defense(p_group, d);
       v_poder   := v_threat;
       v_tocados := 0;
+      v_keep    := false;
       v_nombre  := pueblos[1 + (((hashtext(p_group::text || d::text) % array_length(pueblos, 1))
                                  + array_length(pueblos, 1)) % array_length(pueblos, 1))];
 
       if v_defensa >= v_poder then
-        v_threat := 40;                            -- rechazados, pero rondando
+        -- Aguantó, pero cada embestida abre brecha. Es lo que impide que una
+        -- ciudad bien amurallada ignore los hábitos para siempre: si nadie
+        -- repara, la defensa se erosiona asalto tras asalto hasta ceder.
+        update public.city_tiles t
+           set integrity = greatest(0, t.integrity - 8)
+          from public.buildings b
+         where b.id = t.building_id
+           and t.group_id = p_group
+           and b.defense > 0
+           and b.id <> 'keep'
+           and t.integrity > 0;
+
+        v_threat := 35;                            -- rechazados, pero acampan cerca
       else
         v_dano   := v_poder - v_defensa;
         v_golpes := least(6, greatest(1, v_dano / 25));
@@ -578,7 +653,9 @@ begin
           from public.city_tiles t
           join public.buildings b on b.id = t.building_id
           where t.group_id = p_group and t.integrity > 0
-          order by t.integrity desc, b.cost desc, t.x, t.y
+          -- El Alcázar el último: mientras quede una muralla en pie, los
+          -- golpes caen ahí. Eso es literalmente lo que protege a la familia.
+          order by (t.building_id = 'keep')::int, t.integrity desc, b.cost desc, t.x, t.y
           limit v_golpes
         )
         update public.city_tiles t
@@ -587,11 +664,15 @@ begin
           where t.group_id = p_group and t.x = o.x and t.y = o.y;
 
         get diagnostics v_tocados = row_count;
-        v_threat := 30;
+        select exists (
+          select 1 from public.city_tiles
+          where group_id = p_group and building_id = 'keep' and integrity < 100
+        ) into v_keep;
+        v_threat := 25;
       end if;
 
-      insert into public.raids (group_id, happened_on, raider, power, defense, repelled, buildings_hit)
-      values (p_group, d, v_nombre, v_poder, v_defensa, v_defensa >= v_poder, v_tocados);
+      insert into public.raids (group_id, happened_on, raider, power, defense, repelled, buildings_hit, reached_keep)
+      values (p_group, d, v_nombre, v_poder, v_defensa, v_defensa >= v_poder, v_tocados, coalesce(v_keep, false));
       v_raids := v_raids + 1;
     end if;
 

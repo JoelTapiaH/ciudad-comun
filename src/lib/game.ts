@@ -35,14 +35,14 @@ export function levelProgress(xp: number) {
    redondos. A 100 entra un pueblo saqueador.
    -------------------------------------------------------------------------- */
 
-export const THREAT_RAID = 100;
-export const DEFENSE_BASE = 30;
+export const THREAT_RAID = 60;
+export const DEFENSE_BASE = 20;
 
 /** Cuánto subiría la amenaza si el día de hoy se cerrase ahora mismo. */
 export function threatDelta(habits: number, marks: number): number {
   if (habits <= 0) return 0;
   const falta = Math.max(0, habits - marks);
-  return falta === 0 ? -25 : Math.floor((25 * falta) / habits);
+  return falta === 0 ? -20 : Math.floor((30 * falta) / habits);
 }
 
 export type ThreatBand = {
@@ -53,21 +53,21 @@ export type ThreatBand = {
 };
 
 export function threatBand(threat: number): ThreatBand {
-  if (threat >= 75)
+  if (threat >= 45)
     return {
       key: "inminente",
       label: "Asalto inminente",
-      blurb: "Están a las puertas. Marcad hoy o entrarán.",
+      blurb: "Están a las puertas. Marcad hoy o entrarán esta noche.",
       ink: "var(--pink)",
     };
-  if (threat >= 45)
+  if (threat >= 30)
     return {
       key: "aviso",
       label: "Se acercan",
       blurb: "Los vigías los ven venir. Otro día flojo y entran.",
       ink: "var(--yellow)",
     };
-  if (threat >= 20)
+  if (threat >= 15)
     return {
       key: "inquietud",
       label: "Inquietud",
@@ -92,7 +92,7 @@ export function cityDefense(
     const def = buildings.get(t.building_id)?.defense ?? 0;
     return sum + Math.floor((def * t.integrity) / 100);
   }, 0);
-  return DEFENSE_BASE + fromBuildings + marksLastWeek * 2;
+  return DEFENSE_BASE + fromBuildings + marksLastWeek * 3;
 }
 
 /** Lo que cuesta dejar entero un edificio dañado. */

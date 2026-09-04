@@ -1,3 +1,4 @@
+import { contarAsalto } from "@/lib/story";
 import type { Raid } from "@/lib/types";
 
 /* La crónica de los asaltos. Es la memoria de la ciudad: lo que costó cada
@@ -28,14 +29,8 @@ export default function RaidChronicle({ raids }: { raids: Raid[] }) {
             {raid.happened_on.slice(8, 10)}/{raid.happened_on.slice(5, 7)}
           </span>
           <span className="min-w-0 flex-1 text-sm">
-            <span className="font-semibold">{raid.raider}</span>
-            <span className="text-ink-60">
-              {raid.repelled
-                ? " se dio media vuelta"
-                : raid.buildings_hit === 0
-                  ? " entró y no encontró nada que romper"
-                  : ` arrasó ${raid.buildings_hit} ${raid.buildings_hit === 1 ? "construcción" : "construcciones"}`}
-            </span>
+            <span className="font-semibold">{raid.raider}</span>{" "}
+            <span className="text-ink-60">{contarAsalto(raid)}</span>
           </span>
           <span className="num shrink-0 text-xs text-ink-35">
             {raid.power} vs {raid.defense}

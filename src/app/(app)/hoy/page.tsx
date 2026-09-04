@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import ActivityFeed from "@/components/ActivityFeed";
 import CityMeter from "@/components/CityMeter";
 import HabitBoard from "@/components/HabitBoard";
+import KeepCard from "@/components/KeepCard";
 import RaidAlert from "@/components/RaidAlert";
 import {
   getBoard,
@@ -33,6 +34,7 @@ export default async function HoyPage() {
 
   const defense = cityDefense(tiles, new Map(buildings.map((b) => [b.id, b])), weekMarks);
   const band = threatBand(group.threat);
+  const keep = tiles.find((t) => t.building_id === "keep") ?? null;
   const habitsTotal = board.mine.length + board.others.length;
   const marksToday =
     board.mine.filter((h) => h.doneToday).length + board.others.filter((h) => h.doneToday).length;
@@ -50,13 +52,14 @@ export default async function HoyPage() {
       </div>
 
       <aside className="flex flex-col gap-6">
+        <KeepCard integrity={keep ? keep.integrity : null} threat={group.threat} compact />
+
         {band.key !== "calma" ? (
-          <section className="panel p-4" style={{ borderColor: band.ink, boxShadow: `4px 4px 0 ${band.ink}` }}>
+          <section className="panel p-4">
             <p className="eyebrow mb-1">Amenaza</p>
             <h3 className="display text-xl" style={{ color: band.ink }}>
               {band.label}
             </h3>
-            <p className="mt-1 text-sm text-ink-60">{band.blurb}</p>
             <p className="num mt-2 text-xs text-ink-60">
               {group.threat} de amenaza · {defense} de defensa ·{" "}
               {habitsTotal - marksToday > 0
