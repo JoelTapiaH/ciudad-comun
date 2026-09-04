@@ -23,12 +23,12 @@ export default async function HoyPage() {
 
   const { group, userId, newRaids } = workspace;
   const [board, feed, challenges, tiles, buildings, weekMarks, raids] = await Promise.all([
-    getBoard(group.id, userId),
+    getBoard(group.id, userId, group.timezone),
     getFeed(group.id, userId, 12),
     getChallenges(group.id),
     getCityTiles(group.id),
     getBuildings(),
-    getWeekMarks(group.id),
+    getWeekMarks(group.id, group.timezone),
     getRaids(group.id, 3),
   ]);
 
@@ -41,7 +41,7 @@ export default async function HoyPage() {
   const habitsTotal = diarios.length;
   const marksToday = diarios.filter((h) => h.doneToday).length;
 
-  const todayIso = today();
+  const todayIso = today(group.timezone);
   const active = challenges.find((c) => !c.completed_at && c.ends_on >= todayIso);
 
   return (
@@ -50,7 +50,12 @@ export default async function HoyPage() {
         {newRaids > 0 ? <RaidAlert raids={raids.slice(0, newRaids)} /> : null}
 
         <p className="eyebrow mb-1 first-letter:uppercase">{formatLongDate(todayIso)}</p>
-        <HabitBoard groupId={group.id} mine={board.mine} others={board.others} />
+        <HabitBoard
+          groupId={group.id}
+          timeZone={group.timezone}
+          mine={board.mine}
+          others={board.others}
+        />
       </div>
 
       <aside className="flex flex-col gap-6">
@@ -106,7 +111,7 @@ export default async function HoyPage() {
 
         <section>
           <p className="eyebrow mb-2">Últimas marcas</p>
-          <ActivityFeed entries={feed} />
+          <ActivityFeed entries={feed} timeZone={group.timezone} />
         </section>
       </aside>
     </div>

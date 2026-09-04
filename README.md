@@ -101,6 +101,7 @@ A partir de aquí, cada `git push` a `main` vuelve a desplegar solo.
 | Marcar un hábito | 10 monedas + 2 por cada día de racha, con tope de 10 días (12–30 monedas) |
 | Hábito diario | Se espera cada día. Racha en días consecutivos |
 | Hábito semanal | Se elige cuántas veces por semana (1–6). Racha en semanas cumplidas |
+| Vista Semana | Los siete días se pueden marcar y desmarcar con un toque; la columna de hoy va sombreada |
 | Nivel de ciudad | Umbral de nivel *n* = 75·n·(n−1) → Nv.2 a 150 XP, Nv.3 a 450, Nv.4 a 900 |
 | Construir | Cuesta lo que marca el catálogo y exige el nivel mínimo del edificio |
 | Derribar | Devuelve la mitad de lo que costó, en proporción a lo que quede en pie |
@@ -157,6 +158,17 @@ Los hábitos semanales **solo se juzgan el domingo**, con la semana entera a la
 vista: pedirles una marca diaria sería castigar por diseño lo que el propio
 usuario marcó como semanal.
 
+### La zona horaria
+
+Cada reino guarda la suya (`groups.timezone`) y **todas** las fechas se calculan
+ahí: el trigger que registra una marca, la liquidación diaria y lo que pinta la
+interfaz. Sin esto el día se cortaba a medianoche UTC, y quien vive en América
+marcaba a las 19:00 y se le guardaba con la fecha del día siguiente: rachas
+rotas y la amenaza juzgando el día equivocado.
+
+Se toma del navegador al fundar el reino y se puede corregir desde **Grupo**.
+Una zona inválida cae a UTC en vez de romper los cálculos.
+
 ### La corte
 
 Los dos pretendientes no tienen nombre hasta que el reino da la talla:
@@ -187,9 +199,10 @@ grupos a los que perteneces, y solo puedes marcar o borrar tus propios hábitos.
 
 ## Pruebas
 
-El esquema tiene 93 comprobaciones automáticas —rachas, economía, construcción,
+El esquema tiene 97 comprobaciones automáticas —rachas, economía, construcción,
 retos, asaltos, daños, desgaste, protección del Alcázar, reparación, hábitos
-semanales, la corte y RLS— que se ejecutan contra un Postgres desechable:
+semanales, la corte, la zona horaria y RLS— que se ejecutan contra un Postgres
+desechable:
 
 ### Probar los asaltos sin esperar
 
@@ -238,7 +251,8 @@ src/
     BuildingSprite.tsx    Catálogo de siluetas isométricas, con daños y ruinas
     CityCanvas.tsx        Cuadrícula interactiva con Realtime
     HabitBoard.tsx        Tablero con pestañas Hoy / Semana / Mes
-    HabitHistory.tsx      Rejillas de la semana y de las últimas cinco
+    HabitHistory.tsx      Semana marcable y rejilla de las últimas cinco
+    TimeZoneCard.tsx      Dónde empieza el día del reino
     Court.tsx             La corte y el desbloqueo de los pretendientes
     ThreatPanel.tsx       Estado del asedio: amenaza, defensa y pronóstico
     KeepCard.tsx          El Alcázar y quién vive dentro

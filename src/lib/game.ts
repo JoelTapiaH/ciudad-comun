@@ -107,15 +107,47 @@ export function rewardFor(streak: number) {
 }
 
 /* Fechas -------------------------------------------------------------------
-   Se trabaja en UTC para que la fecha coincida con la que valida Postgres.
+   El día se corta en la zona horaria del reino, no en la del servidor. En
+   Vercel el servidor es UTC: sin esto, quien vive en América marcaba a las
+   19:00 y se le guardaba con la fecha de mañana.
    -------------------------------------------------------------------------- */
+
+/** La zona del navegador. Solo se usa para proponerla al fundar un reino. */
+export function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+const YMD = new Map<string, Intl.DateTimeFormat>();
+function ymd(timeZone: string) {
+  let f = YMD.get(timeZone);
+  if (!f) {
+    // en-CA da directamente AAAA-MM-DD
+    f = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    YMD.set(timeZone, f);
+  }
+  return f;
+}
 
 export function isoDate(d: Date = new Date()): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function today(): string {
-  return isoDate();
+/** Hoy, en la zona horaria que se le pase. Sin zona, UTC. */
+export function today(timeZone = "UTC"): string {
+  try {
+    return ymd(timeZone).format(new Date());
+  } catch {
+    return isoDate();
+  }
 }
 
 export function shiftDate(iso: string, days: number): string {
@@ -141,11 +173,20 @@ export function formatLongDate(iso: string): string {
   return LONG_DATE.format(new Date(`${iso}T00:00:00Z`));
 }
 
-export function formatClock(timestamp: string): string {
-  return new Intl.DateTimeFormat("es-ES", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(timestamp));
+/** La hora, en la zona del reino. Sin zona explícita el servidor rendería en
+    UTC y las marcas aparecían con horas que no eran las de nadie. */
+export function formatClock(timestamp: string, timeZone = "UTC"): string {
+  try {
+    return new Intl.DateTimeFormat("es-ES", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone,
+    }).format(new Date(timestamp));
+  } catch {
+    return new Intl.DateTimeFormat("es-ES", { hour: "2-digit", minute: "2-digit" }).format(
+      new Date(timestamp),
+    );
+  }
 }
 
 /** Lunes de la semana a la que pertenece una fecha (semana ISO). */
@@ -157,20 +198,20 @@ export function mondayOf(iso: string): string {
 }
 
 /** Los siete días de la semana en curso, de lunes a domingo. */
-export function weekDays(reference: string = today()): string[] {
+export function weekDays(reference: string): string[] {
   const lunes = mondayOf(reference);
   return Array.from({ length: 7 }, (_, i) => shiftDate(lunes, i));
 }
 
 /** Los últimos `n` días, del más antiguo al más reciente. */
-export function lastDays(n: number, reference: string = today()): string[] {
+export function lastDays(n: number, reference: string): string[] {
   return Array.from({ length: n }, (_, i) => shiftDate(reference, i - n + 1));
 }
 
 /** Cinco semanas completas terminando en el domingo de la semana en curso.
     Alineado a lunes para que la rejilla se lea como un calendario: sin esto
     las columnas no coincidían con los días salvo que hoy fuese domingo. */
-export function monthGrid(reference: string = today()): string[] {
+export function monthGrid(reference: string): string[] {
   const domingo = shiftDate(mondayOf(reference), 6);
   const inicio = shiftDate(domingo, -34);
   return Array.from({ length: 35 }, (_, i) => shiftDate(inicio, i));
@@ -184,7 +225,7 @@ export function weeklyDone(marks: number, target: number): boolean {
 }
 
 /** Racha actual de un hábito: días consecutivos que terminan hoy o ayer. */
-export function streakFromLogs(dates: string[], reference: string = today()): number {
+export function streakFromLogs(dates: string[], reference: string): number {
   const set = new Set(dates);
   let cursor = set.has(reference) ? reference : shiftDate(reference, -1);
   if (!set.has(cursor)) return 0;

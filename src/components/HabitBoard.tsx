@@ -5,18 +5,19 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { addHabit, archiveHabit, markHabit, unmarkHabit } from "@/app/(app)/hoy/actions";
 import { MonthView, WeekView } from "@/components/HabitHistory";
-import { INKS, INK_LABEL, INK_VAR, rewardFor, weeklyDone } from "@/lib/game";
+import { INKS, INK_LABEL, INK_VAR, rewardFor, today, weeklyDone } from "@/lib/game";
 import type { Frequency, HabitWithToday, Ink } from "@/lib/types";
 
 const EMOJI = ["🏃", "📚", "💧", "🧘", "🛏️", "🥗", "✍️", "🎸", "🧹", "☎️", "🚭", "💪"];
 
 type Props = {
   groupId: string;
+  timeZone: string;
   mine: HabitWithToday[];
   others: HabitWithToday[];
 };
 
-export default function HabitBoard({ groupId, mine, others }: Props) {
+export default function HabitBoard({ groupId, timeZone, mine, others }: Props) {
   const router = useRouter();
   const supabase = createClient();
   const [pending, startTransition] = useTransition();
@@ -29,6 +30,7 @@ export default function HabitBoard({ groupId, mine, others }: Props) {
   // Canal propio por instancia: supabase-js reutiliza el canal si el nombre
   // ya existe, y .on() sobre un canal suscrito lanza excepción.
   const instanceId = useId().replace(/:/g, "");
+  const todayIso = today(timeZone);
 
   /* Cuando otro miembro marca algo, la página se refresca sola. */
   useEffect(() => {
@@ -123,8 +125,10 @@ export default function HabitBoard({ groupId, mine, others }: Props) {
 
       {adding ? <NewHabit groupId={groupId} onDone={() => setAdding(false)} /> : null}
 
-      {vista === "semana" ? <WeekView habits={mine} /> : null}
-      {vista === "mes" ? <MonthView habits={mine} /> : null}
+      {vista === "semana" ? (
+        <WeekView habits={mine} timeZone={timeZone} todayIso={todayIso} />
+      ) : null}
+      {vista === "mes" ? <MonthView habits={mine} todayIso={todayIso} /> : null}
 
       {vista === "hoy" && mine.length === 0 && !adding ? (
         <div className="panel p-5">

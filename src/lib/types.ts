@@ -21,6 +21,7 @@ export type Group = {
   last_settled_on: string;
   suitor_one_name: string | null;
   suitor_two_name: string | null;
+  timezone: string;
   created_at: string;
 };
 
@@ -136,7 +137,11 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
-      create_group: { Args: { p_name: string; p_city_name: string }; Returns: string };
+      create_group: {
+        Args: { p_name: string; p_city_name: string; p_timezone?: string };
+        Returns: string;
+      };
+      set_group_timezone: { Args: { p_group: string; p_tz: string }; Returns: undefined };
       join_group: { Args: { p_code: string }; Returns: string };
       place_building: {
         Args: { p_group: string; p_x: number; p_y: number; p_building: string };

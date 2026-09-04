@@ -96,9 +96,11 @@ export async function getCityTiles(groupId: string): Promise<CityTile[]> {
 export async function getBoard(
   groupId: string,
   userId: string,
+  timeZone: string,
 ): Promise<{ mine: HabitWithToday[]; others: HabitWithToday[] }> {
   const supabase = await createClient();
-  const since = shiftDate(today(), -90);
+  const todayIso = today(timeZone);
+  const since = shiftDate(todayIso, -90);
 
   const [{ data: habits }, { data: logs }, { data: profiles }] = await Promise.all([
     supabase.from("habits").select("*").eq("group_id", groupId).eq("archived", false).order("created_at"),
@@ -107,7 +109,6 @@ export async function getBoard(
   ]);
 
   const dates = datesByHabit((logs ?? []) as Pick<HabitLog, "habit_id" | "log_date">[]);
-  const todayIso = today();
   const logToday = new Map(
     ((logs ?? []) as { id: string; habit_id: string; log_date: string }[])
       .filter((l) => l.log_date === todayIso)
@@ -191,19 +192,19 @@ export async function getRaids(groupId: string, limit = 12): Promise<Raid[]> {
 }
 
 /** Marcas de los últimos 7 días: el pulso que alimenta la defensa. */
-export async function getWeekMarks(groupId: string): Promise<number> {
+export async function getWeekMarks(groupId: string, timeZone: string): Promise<number> {
   const supabase = await createClient();
   const { count } = await supabase
     .from("habit_logs")
     .select("id", { count: "exact", head: true })
     .eq("group_id", groupId)
-    .gte("log_date", shiftDate(today(), -6));
+    .gte("log_date", shiftDate(today(timeZone), -6));
   return count ?? 0;
 }
 
 /** Hábitos DIARIOS activos y sus marcas de hoy: es lo que se juzga esta noche.
     Los semanales se evalúan al cerrar la semana, así que no cuentan aquí. */
-export async function getTodayPulse(groupId: string) {
+export async function getTodayPulse(groupId: string, timeZone: string) {
   const supabase = await createClient();
 
   const [{ data: habits }, { data: logs }] = await Promise.all([
@@ -213,7 +214,11 @@ export async function getTodayPulse(groupId: string) {
       .eq("group_id", groupId)
       .eq("archived", false)
       .eq("frequency", "daily"),
-    supabase.from("habit_logs").select("habit_id").eq("group_id", groupId).eq("log_date", today()),
+    supabase
+      .from("habit_logs")
+      .select("habit_id")
+      .eq("group_id", groupId)
+      .eq("log_date", today(timeZone)),
   ]);
 
   const diarios = new Set((habits ?? []).map((h) => h.id));
@@ -251,9 +256,9 @@ export async function getChallenges(groupId: string): Promise<ChallengeWithProgr
 }
 
 /** Marcas por persona en los últimos 7 días, para la tabla del grupo. */
-export async function getWeekScores(groupId: string) {
+export async function getWeekScores(groupId: string, timeZone: string) {
   const supabase = await createClient();
-  const since = shiftDate(today(), -6);
+  const since = shiftDate(today(timeZone), -6);
 
   const { data } = await supabase
     .from("habit_logs")
@@ -269,4 +274,11 @@ export async function getWeekScores(groupId: string) {
     tally.set(row.user_id, current);
   }
   return tally;
+}
+
+/** La zona horaria del reino activo. Las acciones de servidor la necesitan
+    para calcular "hoy" igual que lo hace Postgres. */
+export async function groupTimeZone(): Promise<string> {
+  const workspace = await getWorkspace();
+  return workspace?.group.timezone ?? "UTC";
 }

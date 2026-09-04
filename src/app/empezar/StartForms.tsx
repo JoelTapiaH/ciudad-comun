@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
+import { browserTimeZone } from "@/lib/game";
 import { createGroup, joinGroup, type StartState } from "./actions";
 
 function Submit({ label, variant = "primary" }: { label: string; variant?: "primary" | "blue" }) {
@@ -23,6 +24,11 @@ function Problem({ state }: { state: StartState }) {
 }
 
 export default function StartForms() {
+  // En el servidor la zona sería siempre UTC, así que se rellena al montar:
+  // leerla durante el render daría un desajuste de hidratación.
+  const [tz, setTz] = useState("UTC");
+  useEffect(() => setTz(browserTimeZone()), []);
+
   const empty: StartState = {};
   const [createState, createAction] = useActionState(createGroup, empty);
   const [joinState, joinAction] = useActionState(joinGroup, empty);
@@ -37,6 +43,8 @@ export default function StartForms() {
           puestas.
         </p>
         <form action={createAction} className="mt-1 flex flex-col gap-3">
+          {/* El día del reino se corta en esta zona, no en la del servidor */}
+          <input type="hidden" name="timezone" value={tz} />
           <label className="flex flex-col gap-1.5">
             <span className="eyebrow">Nombre del grupo</span>
             <input className="field" name="name" placeholder="Los del gimnasio" required maxLength={50} />

@@ -3,20 +3,24 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { today } from "@/lib/game";
+import { groupTimeZone } from "@/lib/data";
 import type { Frequency, Ink } from "@/lib/types";
 
 export type MarkResult = { error?: string; coins?: number; streak?: number };
 
-export async function markHabit(habitId: string): Promise<MarkResult> {
+/** `date` permite arreglar un día suelto de la semana; por defecto, hoy. */
+export async function markHabit(habitId: string, date?: string): Promise<MarkResult> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "Tu sesión ha caducado. Vuelve a entrar." };
 
+  const logDate = date ?? today(await groupTimeZone());
+
   const { data, error } = await supabase
     .from("habit_logs")
-    .insert({ habit_id: habitId, user_id: user.id, log_date: today() })
+    .insert({ habit_id: habitId, user_id: user.id, log_date: logDate })
     .select("coins_awarded, streak")
     .single();
 
@@ -29,7 +33,7 @@ export async function markHabit(habitId: string): Promise<MarkResult> {
   return { coins: data.coins_awarded, streak: data.streak };
 }
 
-export async function unmarkHabit(habitId: string): Promise<MarkResult> {
+export async function unmarkHabit(habitId: string, date?: string): Promise<MarkResult> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -41,7 +45,7 @@ export async function unmarkHabit(habitId: string): Promise<MarkResult> {
     .delete()
     .eq("habit_id", habitId)
     .eq("user_id", user.id)
-    .eq("log_date", today());
+    .eq("log_date", date ?? today(await groupTimeZone()));
 
   if (error) return { error: error.message };
 

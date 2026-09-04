@@ -135,6 +135,10 @@ alter table public.habits     add column if not exists weekly_target   int  not 
 alter table public.groups     add column if not exists suitor_one_name text;
 alter table public.groups     add column if not exists suitor_two_name text;
 
+-- Zona horaria del reino. Sin esto el día se cortaba a medianoche UTC y quien
+-- viva en América marcaba a las 19:00 y se le guardaba con la fecha de mañana.
+alter table public.groups     add column if not exists timezone        text not null default 'UTC';
+
 do $$ begin
   alter table public.habits add constraint habits_frequency_ck check (frequency in ('daily','weekly'));
 exception when duplicate_object then null; end $$;
@@ -225,6 +229,14 @@ returns int language sql immutable as $$
   select greatest(1, floor((1 + sqrt(1 + 4 * greatest(p_xp, 0)::numeric / 75)) / 2)::int);
 $$;
 
+-- El "hoy" de un grupo depende de dónde vive su gente, no del servidor.
+create or replace function public.group_today(p_group uuid)
+returns date language sql stable security definer set search_path = public as $$
+  select (now() at time zone coalesce(
+           (select timezone from public.groups where id = p_group), 'UTC'
+         ))::date;
+$$;
+
 -- ¿El usuario actual pertenece a este grupo? SECURITY DEFINER para que las
 -- políticas de group_members no se llamen a sí mismas en bucle.
 create or replace function public.is_member(p_group uuid)
@@ -233,6 +245,27 @@ returns boolean language sql stable security definer set search_path = public as
     select 1 from public.group_members
     where group_id = p_group and user_id = auth.uid()
   );
+$$;
+
+-- Una zona horaria inventada rompería todos los cálculos de fecha, así que se
+-- comprueba antes de guardarla y se cae a UTC si no existe.
+create or replace function public.valid_timezone(p_tz text)
+returns text language plpgsql immutable as $$
+begin
+  if p_tz is null or trim(p_tz) = '' then return 'UTC'; end if;
+  perform now() at time zone p_tz;
+  return p_tz;
+exception when others then
+  return 'UTC';
+end;
+$$;
+
+create or replace function public.set_group_timezone(p_group uuid, p_tz text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_member(p_group) then raise exception 'No perteneces a este reino'; end if;
+  update public.groups set timezone = public.valid_timezone(p_tz) where id = p_group;
+end;
 $$;
 
 create or replace function public.gen_invite_code()
@@ -288,6 +321,7 @@ declare
   v_streak int;
   v_freq text;
   v_target int;
+  v_hoy date;
 begin
   select group_id, user_id, frequency, weekly_target
     into v_group, v_owner, v_freq, v_target
@@ -299,10 +333,11 @@ begin
   if v_owner <> auth.uid() then
     raise exception 'Solo puedes marcar tus propios hábitos';
   end if;
-  if new.log_date > (now() at time zone 'utc')::date + 1 then
+  v_hoy := public.group_today(v_group);
+  if new.log_date > v_hoy then
     raise exception 'No puedes marcar un día futuro';
   end if;
-  if new.log_date < (now() at time zone 'utc')::date - 7 then
+  if new.log_date < v_hoy - 7 then
     raise exception 'Solo puedes registrar los últimos 7 días';
   end if;
 
@@ -386,7 +421,15 @@ create trigger habit_logs_apply
 -- Operaciones de grupo
 -- ---------------------------------------------------------------------------
 
-create or replace function public.create_group(p_name text, p_city_name text)
+-- La firma cambia (llega p_timezone), así que la anterior se retira: con las
+-- dos vivas, una llamada de dos argumentos sería ambigua.
+drop function if exists public.create_group(text, text);
+
+create or replace function public.create_group(
+  p_name text,
+  p_city_name text,
+  p_timezone text default 'UTC'
+)
 returns uuid language plpgsql security definer set search_path = public as $$
 declare
   v_id uuid;
@@ -395,8 +438,9 @@ begin
   if v_uid is null then raise exception 'Necesitas iniciar sesión'; end if;
   if char_length(trim(coalesce(p_name, ''))) = 0 then raise exception 'El grupo necesita un nombre'; end if;
 
-  insert into public.groups (name, city_name, invite_code, created_by)
-  values (trim(p_name), coalesce(nullif(trim(p_city_name), ''), trim(p_name)), public.gen_invite_code(), v_uid)
+  insert into public.groups (name, city_name, invite_code, created_by, timezone)
+  values (trim(p_name), coalesce(nullif(trim(p_city_name), ''), trim(p_name)),
+          public.gen_invite_code(), v_uid, public.valid_timezone(p_timezone))
   returning id into v_id;
 
   insert into public.group_members (group_id, user_id, role) values (v_id, v_uid, 'owner');
@@ -414,8 +458,8 @@ begin
   insert into public.challenges (group_id, title, goal, starts_on, ends_on, reward_coins, reward_building_id)
   values (
     v_id, 'Primeros cimientos', 25,
-    (now() at time zone 'utc')::date,
-    (now() at time zone 'utc')::date + 6,
+    public.group_today(v_id),
+    public.group_today(v_id) + 6,
     250, 'monument'
   );
 
@@ -625,8 +669,8 @@ returns int language sql stable security definer set search_path = public as $$
         select count(*)::int * 3
         from public.habit_logs
         where group_id = p_group
-          and log_date between coalesce(p_on, (now() at time zone 'utc')::date) - 6
-                           and coalesce(p_on, (now() at time zone 'utc')::date)
+          and log_date between coalesce(p_on, public.group_today(p_group)) - 6
+                           and coalesce(p_on, public.group_today(p_group))
       ), 0);
 $$;
 
@@ -635,7 +679,7 @@ returns int language plpgsql security definer set search_path = public as $$
 declare
   g          public.groups%rowtype;
   d          date;
-  hoy        date := (now() at time zone 'utc')::date;
+  hoy        date := public.group_today(p_group);
   v_habits   int;
   v_marks    int;
   v_falta    int;

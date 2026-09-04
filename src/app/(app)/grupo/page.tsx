@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import ActivityFeed from "@/components/ActivityFeed";
 import CityMeter from "@/components/CityMeter";
 import InviteCode from "@/components/InviteCode";
+import TimeZoneCard from "@/components/TimeZoneCard";
 import { getFeed, getWeekScores, getWorkspace } from "@/lib/data";
 
 export default async function GrupoPage() {
@@ -9,7 +10,7 @@ export default async function GrupoPage() {
   if (!workspace) redirect("/empezar");
 
   const { group, members, userId } = workspace;
-  const [scores, feed] = await Promise.all([getWeekScores(group.id), getFeed(group.id, userId, 30)]);
+  const [scores, feed] = await Promise.all([getWeekScores(group.id, group.timezone), getFeed(group.id, userId, 30)]);
 
   const ranked = members
     .map((m) => ({ ...m, ...(scores.get(m.id) ?? { marks: 0, coins: 0 }) }))
@@ -35,6 +36,8 @@ export default async function GrupoPage() {
         </p>
         <InviteCode code={group.invite_code} />
       </section>
+
+      <TimeZoneCard groupId={group.id} timezone={group.timezone} />
 
       <section className="panel p-4">
         <p className="eyebrow mb-3">Progreso de la ciudad</p>
@@ -85,7 +88,7 @@ export default async function GrupoPage() {
 
       <section>
         <p className="eyebrow mb-2">Registro completo</p>
-        <ActivityFeed entries={feed} />
+        <ActivityFeed entries={feed} timeZone={group.timezone} />
       </section>
     </div>
   );

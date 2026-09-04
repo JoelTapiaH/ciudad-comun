@@ -15,6 +15,7 @@ export default async function RetosPage() {
       challenges={challenges}
       rewards={buildings.filter((b) => b.reward_only)}
       names={Object.fromEntries(members.map((m) => [m.id, m.display_name]))}
+      timeZone={group.timezone}
     />
   );
 }

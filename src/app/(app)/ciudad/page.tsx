@@ -24,8 +24,8 @@ export default async function CiudadPage() {
     getCityTiles(group.id),
     getBuildings(),
     getRaids(group.id),
-    getWeekMarks(group.id),
-    getTodayPulse(group.id),
+    getWeekMarks(group.id, group.timezone),
+    getTodayPulse(group.id, group.timezone),
     getActiveHabitCount(group.id),
   ]);
 

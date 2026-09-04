@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { shiftDate, today } from "@/lib/game";
+import { groupTimeZone } from "@/lib/data";
 
 export async function createChallenge(formData: FormData): Promise<{ error?: string }> {
   const groupId = String(formData.get("group_id") ?? "");
@@ -17,7 +18,7 @@ export async function createChallenge(formData: FormData): Promise<{ error?: str
   }
   if (![7, 14, 30].includes(days)) return { error: "Elige 7, 14 o 30 días." };
 
-  const startsOn = today();
+  const startsOn = today(await groupTimeZone());
   const supabase = await createClient();
 
   const { error } = await supabase.from("challenges").insert({

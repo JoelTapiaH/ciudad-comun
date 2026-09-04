@@ -9,6 +9,7 @@ export type StartState = { error?: string };
 export async function createGroup(_prev: StartState, formData: FormData): Promise<StartState> {
   const name = String(formData.get("name") ?? "").trim();
   const cityName = String(formData.get("city_name") ?? "").trim();
+  const timezone = String(formData.get("timezone") ?? "UTC").trim() || "UTC";
 
   if (!name) return { error: "Ponle nombre al grupo." };
 
@@ -16,6 +17,7 @@ export async function createGroup(_prev: StartState, formData: FormData): Promis
   const { error } = await supabase.rpc("create_group", {
     p_name: name,
     p_city_name: cityName || name,
+    p_timezone: timezone,
   });
 
   if (error) return { error: error.message };

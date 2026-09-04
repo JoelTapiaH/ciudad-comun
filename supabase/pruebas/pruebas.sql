@@ -55,7 +55,7 @@ begin
 
   -- Ana funda el grupo -------------------------------------------------------
   perform set_config('request.jwt.claim.sub', a::text, true);
-  g := public.create_group('Los del gimnasio', 'Puerto Constancia');
+  g := public.create_group('Los del gimnasio', 'Puerto Constancia', 'UTC');
   select invite_code into code from public.groups where id = g;
 
   perform assert((select coins from public.groups where id = g) = 120, 'la ciudad empieza con 120 monedas');
@@ -257,7 +257,7 @@ begin
     values (a, 'dani@ejemplo.com', '{"display_name":"Dani"}');
   perform set_config('request.jwt.claim.sub', a::text, true);
 
-  g := public.create_group('Los descuidados', 'Puerto Ruina');
+  g := public.create_group('Los descuidados', 'Puerto Ruina', 'UTC');
   insert into public.habits (group_id, user_id, name) values (g, a, 'Correr') returning id into h;
 
   -- El hábito tiene que existir ya en los días que se liquidan
@@ -420,7 +420,7 @@ begin
   insert into auth.users (id, email, raw_user_meta_data)
     values (a, 'joel@ejemplo.com', '{"display_name":"Joel"}');
   perform set_config('request.jwt.claim.sub', a::text, true);
-  g := public.create_group('El reino', 'Betsabell');
+  g := public.create_group('El reino', 'Betsabell', 'UTC');
   delete from public.challenges where group_id = g;
 
   insert into public.habits (group_id, user_id, name, frequency, weekly_target)
@@ -491,4 +491,36 @@ begin
     'Solo hay dos', 'no hay un tercer pretendiente');
 
   raise notice '--- semanales y pretendientes: todo correcto ---';
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Zona horaria: el día se corta donde vive la gente, no donde está el servidor
+-- ---------------------------------------------------------------------------
+reset role;
+
+do $$
+declare
+  a uuid := '66666666-6666-6666-6666-666666666666';
+  g uuid;
+begin
+  insert into auth.users (id, email, raw_user_meta_data)
+    values (a, 'zona@ejemplo.com', '{"display_name":"Zona"}');
+  perform set_config('request.jwt.claim.sub', a::text, true);
+
+  g := public.create_group('Zona', 'Zona', 'America/Bogota');
+  perform assert((select timezone from public.groups where id = g) = 'America/Bogota',
+    'el grupo guarda su zona horaria');
+  perform assert(public.group_today(g) = (now() at time zone 'America/Bogota')::date,
+    'el hoy del grupo se calcula en su zona');
+
+  -- Una zona inventada no puede romper los cálculos
+  perform public.set_group_timezone(g, 'Marte/Olimpo');
+  perform assert((select timezone from public.groups where id = g) = 'UTC',
+    'una zona inválida cae a UTC en vez de romper');
+
+  perform public.set_group_timezone(g, 'America/Lima');
+  perform assert((select timezone from public.groups where id = g) = 'America/Lima',
+    'la zona se puede corregir después');
+
+  raise notice '--- zona horaria: todo correcto ---';
 end $$;

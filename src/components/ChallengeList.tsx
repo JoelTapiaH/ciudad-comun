@@ -13,15 +13,16 @@ type Props = {
   challenges: ChallengeWithProgress[];
   rewards: Building[];
   names: Record<string, string>;
+  timeZone: string;
 };
 
-export default function ChallengeList({ groupId, challenges, rewards, names }: Props) {
+export default function ChallengeList({ groupId, challenges, rewards, names, timeZone }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
 
-  const todayIso = today();
+  const todayIso = today(timeZone);
   const live = challenges.filter((c) => !c.completed_at && c.ends_on >= todayIso);
   const claimable = challenges.filter((c) => !c.completed_at && c.done >= c.goal);
   const past = challenges.filter(
