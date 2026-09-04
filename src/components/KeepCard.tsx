@@ -1,6 +1,6 @@
 import { BuildingThumb } from "@/components/BuildingSprite";
 import { INK_VAR, repairCost } from "@/lib/game";
-import { FAMILIA, beatDelAlcazar } from "@/lib/story";
+import { REINO, beatDelAlcazar } from "@/lib/story";
 
 /* El corazón del asedio. Todo lo demás son números; esto es a quién protegen. */
 
@@ -53,7 +53,7 @@ export default function KeepCard({
       {!compact ? (
         <p className="mt-3 border-t-2 border-[var(--ink-12)] pt-3 text-xs text-ink-60">
           Los asaltos golpean primero lo que hayáis levantado alrededor. Mientras quede una muralla
-          en pie, {FAMILIA.principe} no pelea en el patio.
+          en pie, {REINO.rey} y {REINO.companero} no pelean en el patio.
         </p>
       ) : null}
     </section>

@@ -401,3 +401,94 @@ begin
 
   raise notice '--- supervivencia: todo correcto ---';
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Hábitos semanales y los pretendientes
+-- ---------------------------------------------------------------------------
+reset role;
+
+do $$
+declare
+  a uuid := '55555555-5555-5555-5555-555555555555';
+  g uuid;
+  hs uuid;   -- semanal
+  hd uuid;   -- diario
+  hoy date := (now() at time zone 'utc')::date;
+  lunes date := date_trunc('week', (now() at time zone 'utc')::date)::date;
+  n int;
+begin
+  insert into auth.users (id, email, raw_user_meta_data)
+    values (a, 'joel@ejemplo.com', '{"display_name":"Joel"}');
+  perform set_config('request.jwt.claim.sub', a::text, true);
+  g := public.create_group('El reino', 'Betsabell');
+  delete from public.challenges where group_id = g;
+
+  insert into public.habits (group_id, user_id, name, frequency, weekly_target)
+    values (g, a, 'Correr largo', 'weekly', 1) returning id into hs;
+  insert into public.habits (group_id, user_id, name, frequency)
+    values (g, a, 'Leer', 'daily') returning id into hd;
+  update public.habits set created_at = now() - interval '40 days' where group_id = g;
+
+  -- Racha semanal. lunes−1 es el domingo de la semana pasada: siempre cae
+  -- dentro de los 7 días que el trigger permite registrar.
+  insert into public.habit_logs (habit_id, user_id, log_date) values (hs, a, lunes - 1);
+  perform assert(
+    (select streak from public.habit_logs where habit_id = hs and log_date = lunes - 1) = 1,
+    'primera semana cumplida: racha de 1');
+
+  insert into public.habit_logs (habit_id, user_id, log_date) values (hs, a, hoy);
+  perform assert(
+    (select streak from public.habit_logs where habit_id = hs and log_date = hoy) = 2,
+    'la racha semanal cuenta semanas seguidas, no días');
+
+  -- Un semanal sin cumplir solo pesa al cerrar la semana, el domingo.
+  -- Liquidar 7 días seguidos cubre exactamente un domingo.
+  update public.habits set archived = true where id = hd;
+  update public.habits set weekly_target = 2 where id = hs;
+  delete from public.habit_logs where group_id = g;
+  update public.groups set threat = 0, last_settled_on = hoy - 8 where id = g;
+  perform public.settle_city(g);
+  perform assert((select threat from public.groups where id = g) = 30,
+    'el semanal incumplido pesa una vez, al cerrar la semana');
+
+  -- Y si se cumple, la semana descuenta
+  delete from public.raids where group_id = g;
+  insert into public.habit_logs (habit_id, user_id, log_date) values (hs, a, lunes - 1);
+  insert into public.habit_logs (habit_id, user_id, log_date) values (hs, a, lunes - 2);
+  update public.groups set threat = 40, last_settled_on = hoy - 8 where id = g;
+  perform public.settle_city(g);
+  select threat into n from public.groups where id = g;
+  perform assert(n <= 40, 'una semana cumplida no sube la amenaza');
+
+  -- Los pretendientes: el nombre se gana
+  update public.habits set archived = false where id = hd;
+  perform assert_raises(
+    format('select public.set_suitor_name(%L, 1, %L)', g, 'Alguien'),
+    'Aún no se ha dado a conocer', 'sin puntos ni hábitos, el nombre sigue oculto');
+
+  update public.groups set xp = 800 where id = g;
+  perform assert_raises(
+    format('select public.set_suitor_name(%L, 1, %L)', g, 'Alguien'),
+    'Aún no se ha dado a conocer', 'con XP pero pocos hábitos, tampoco');
+
+  insert into public.habits (group_id, user_id, name) values (g, a, 'Agua'), (g, a, 'Estirar');
+  perform public.set_suitor_name(g, 1, '  Esteban  ');
+  perform assert((select suitor_one_name from public.groups where id = g) = 'Esteban',
+    'con 600 XP y 4 hábitos se nombra al primero, y se recorta el espacio');
+
+  perform assert_raises(
+    format('select public.set_suitor_name(%L, 2, %L)', g, 'Otro'),
+    'Aún no se ha dado a conocer', 'el segundo pide más que el primero');
+
+  update public.groups set xp = 1600 where id = g;
+  insert into public.habits (group_id, user_id, name) values (g, a, 'Diario'), (g, a, 'Piano');
+  perform public.set_suitor_name(g, 2, 'Iván');
+  perform assert((select suitor_two_name from public.groups where id = g) = 'Iván',
+    'con 1500 XP y 6 hábitos se desbloquea el segundo');
+
+  perform assert_raises(
+    format('select public.set_suitor_name(%L, 3, %L)', g, 'Nadie'),
+    'Solo hay dos', 'no hay un tercer pretendiente');
+
+  raise notice '--- semanales y pretendientes: todo correcto ---';
+end $$;

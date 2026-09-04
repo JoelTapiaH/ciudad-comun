@@ -1,6 +1,6 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import { datesByHabit, shiftDate, streakFromLogs, today } from "@/lib/game";
+import { datesByHabit, mondayOf, shiftDate, streakFromLogs, today } from "@/lib/game";
 import type {
   Building,
   Challenge,
@@ -115,15 +115,23 @@ export async function getBoard(
   );
   const people = new Map(((profiles ?? []) as Profile[]).map((p) => [p.id, p]));
 
-  const enriched = ((habits ?? []) as Habit[]).map((habit) => ({
-    ...habit,
-    owner:
-      people.get(habit.user_id) ??
-      ({ id: habit.user_id, display_name: "Alguien", avatar_emoji: "🙂", created_at: "" } as Profile),
-    doneToday: logToday.has(habit.id),
-    logId: logToday.get(habit.id) ?? null,
-    streak: streakFromLogs(dates.get(habit.id) ?? [], todayIso),
-  }));
+  const lunes = mondayOf(todayIso);
+  const desdeMes = shiftDate(todayIso, -34);
+
+  const enriched = ((habits ?? []) as Habit[]).map((habit) => {
+    const fechas = dates.get(habit.id) ?? [];
+    return {
+      ...habit,
+      owner:
+        people.get(habit.user_id) ??
+        ({ id: habit.user_id, display_name: "Alguien", avatar_emoji: "🙂", created_at: "" } as Profile),
+      doneToday: logToday.has(habit.id),
+      logId: logToday.get(habit.id) ?? null,
+      streak: streakFromLogs(fechas, todayIso),
+      weekMarks: fechas.filter((f) => f >= lunes && f <= todayIso).length,
+      history: fechas.filter((f) => f >= desdeMes),
+    };
+  });
 
   return {
     mine: enriched.filter((h) => h.user_id === userId),
@@ -193,22 +201,35 @@ export async function getWeekMarks(groupId: string): Promise<number> {
   return count ?? 0;
 }
 
-/** Hábitos activos y marcas de hoy, para anticipar la amenaza de esta noche. */
+/** Hábitos DIARIOS activos y sus marcas de hoy: es lo que se juzga esta noche.
+    Los semanales se evalúan al cerrar la semana, así que no cuentan aquí. */
 export async function getTodayPulse(groupId: string) {
   const supabase = await createClient();
-  const [{ count: habits }, { count: marks }] = await Promise.all([
+
+  const [{ data: habits }, { data: logs }] = await Promise.all([
     supabase
       .from("habits")
-      .select("id", { count: "exact", head: true })
+      .select("id")
       .eq("group_id", groupId)
-      .eq("archived", false),
-    supabase
-      .from("habit_logs")
-      .select("id", { count: "exact", head: true })
-      .eq("group_id", groupId)
-      .eq("log_date", today()),
+      .eq("archived", false)
+      .eq("frequency", "daily"),
+    supabase.from("habit_logs").select("habit_id").eq("group_id", groupId).eq("log_date", today()),
   ]);
-  return { habits: habits ?? 0, marks: marks ?? 0 };
+
+  const diarios = new Set((habits ?? []).map((h) => h.id));
+  const marks = (logs ?? []).filter((l) => diarios.has(l.habit_id)).length;
+  return { habits: diarios.size, marks };
+}
+
+/** Cuántos hábitos activos tiene el grupo: uno de los umbrales de la corte. */
+export async function getActiveHabitCount(groupId: string): Promise<number> {
+  const supabase = await createClient();
+  const { count } = await supabase
+    .from("habits")
+    .select("id", { count: "exact", head: true })
+    .eq("group_id", groupId)
+    .eq("archived", false);
+  return count ?? 0;
 }
 
 export type ChallengeWithProgress = Challenge & { done: number };

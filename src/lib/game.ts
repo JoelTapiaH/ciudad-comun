@@ -148,6 +148,41 @@ export function formatClock(timestamp: string): string {
   }).format(new Date(timestamp));
 }
 
+/** Lunes de la semana a la que pertenece una fecha (semana ISO). */
+export function mondayOf(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  const dow = (d.getUTCDay() + 6) % 7; // 0 = lunes
+  d.setUTCDate(d.getUTCDate() - dow);
+  return isoDate(d);
+}
+
+/** Los siete días de la semana en curso, de lunes a domingo. */
+export function weekDays(reference: string = today()): string[] {
+  const lunes = mondayOf(reference);
+  return Array.from({ length: 7 }, (_, i) => shiftDate(lunes, i));
+}
+
+/** Los últimos `n` días, del más antiguo al más reciente. */
+export function lastDays(n: number, reference: string = today()): string[] {
+  return Array.from({ length: n }, (_, i) => shiftDate(reference, i - n + 1));
+}
+
+/** Cinco semanas completas terminando en el domingo de la semana en curso.
+    Alineado a lunes para que la rejilla se lea como un calendario: sin esto
+    las columnas no coincidían con los días salvo que hoy fuese domingo. */
+export function monthGrid(reference: string = today()): string[] {
+  const domingo = shiftDate(mondayOf(reference), 6);
+  const inicio = shiftDate(domingo, -34);
+  return Array.from({ length: 35 }, (_, i) => shiftDate(inicio, i));
+}
+
+export const WEEKDAY_INITIALS = ["L", "M", "X", "J", "V", "S", "D"] as const;
+
+/** Un hábito semanal está cubierto cuando llega a su objetivo. */
+export function weeklyDone(marks: number, target: number): boolean {
+  return marks >= target;
+}
+
 /** Racha actual de un hábito: días consecutivos que terminan hoy o ayer. */
 export function streakFromLogs(dates: string[], reference: string = today()): number {
   const set = new Set(dates);

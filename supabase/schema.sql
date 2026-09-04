@@ -126,6 +126,23 @@ alter table public.city_tiles add column if not exists integrity       int not n
 alter table public.buildings  add column if not exists defense         int not null default 0;
 alter table public.raids      add column if not exists reached_keep    boolean not null default false;
 
+-- Frecuencia: un hábito puede pedirse cada día o unas cuantas veces por semana.
+alter table public.habits     add column if not exists frequency       text not null default 'daily';
+alter table public.habits     add column if not exists weekly_target   int  not null default 3;
+
+-- Los dos pretendientes. El umbral desbloquea el derecho a nombrarlos; el
+-- nombre lo pone el reino, no el código.
+alter table public.groups     add column if not exists suitor_one_name text;
+alter table public.groups     add column if not exists suitor_two_name text;
+
+do $$ begin
+  alter table public.habits add constraint habits_frequency_ck check (frequency in ('daily','weekly'));
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.habits add constraint habits_weekly_target_ck check (weekly_target between 1 and 6);
+exception when duplicate_object then null; end $$;
+
 do $$ begin
   alter table public.city_tiles add constraint city_tiles_integrity_ck check (integrity between 0 and 100);
 exception when duplicate_object then null; end $$;
@@ -269,8 +286,11 @@ declare
   v_group uuid;
   v_owner uuid;
   v_streak int;
+  v_freq text;
+  v_target int;
 begin
-  select group_id, user_id into v_group, v_owner
+  select group_id, user_id, frequency, weekly_target
+    into v_group, v_owner, v_freq, v_target
   from public.habits where id = new.habit_id and not archived;
 
   if v_group is null then
@@ -289,16 +309,44 @@ begin
   new.group_id := v_group;
   new.user_id  := v_owner;
 
-  -- Racha: días consecutivos que terminan en new.log_date.
-  -- "Islas y huecos": una fila pertenece a la racha si su fecha es
-  -- exactamente ancla − (posición − 1) contando hacia atrás.
-  select count(*) + 1 into v_streak
-  from (
-    select log_date, row_number() over (order by log_date desc) as rn
-    from public.habit_logs
-    where habit_id = new.habit_id and log_date < new.log_date
-  ) t
-  where t.log_date = new.log_date - t.rn::int;
+  if v_freq = 'weekly' then
+    -- Racha en semanas: cuentan las semanas seguidas que llegaron al objetivo.
+    -- La fila aún no existe (trigger BEFORE), así que se suma a mano a la
+    -- semana en curso.
+    with base as (
+      select date_trunc('week', log_date)::date as semana, count(*)::int as marcas
+      from public.habit_logs
+      where habit_id = new.habit_id and log_date < new.log_date
+      group by 1
+    ),
+    conteo as (
+      select semana, marcas from base where semana <> date_trunc('week', new.log_date)::date
+      union all
+      select date_trunc('week', new.log_date)::date,
+             coalesce((select marcas from base
+                        where semana = date_trunc('week', new.log_date)::date), 0) + 1
+    ),
+    cumplidas as (
+      select semana, row_number() over (order by semana desc) as rn
+      from conteo
+      where marcas >= v_target and semana <= date_trunc('week', new.log_date)::date
+    )
+    select count(*) into v_streak
+    from cumplidas
+    where semana = date_trunc('week', new.log_date)::date - (((rn - 1) * 7)::int);
+
+    v_streak := greatest(1, v_streak);
+  else
+    -- Racha en días: "islas y huecos". Una fila pertenece a la racha si su
+    -- fecha es exactamente ancla − (posición − 1) contando hacia atrás.
+    select count(*) + 1 into v_streak
+    from (
+      select log_date, row_number() over (order by log_date desc) as rn
+      from public.habit_logs
+      where habit_id = new.habit_id and log_date < new.log_date
+    ) t
+    where t.log_date = new.log_date - t.rn::int;
+  end if;
 
   new.streak := v_streak;
   -- 10 monedas base + 2 por día de racha (tope 10 días) → 12…30 por marca.
@@ -391,6 +439,39 @@ begin
   on conflict (group_id, user_id) do nothing;
 
   return v_id;
+end;
+$$;
+
+-- Nombrar a un pretendiente. El umbral se comprueba aquí, no en el navegador:
+-- desbloquear el nombre es parte del juego.
+create or replace function public.set_suitor_name(p_group uuid, p_slot int, p_name text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  g public.groups%rowtype;
+  v_habitos int;
+  v_xp_min int;
+  v_hab_min int;
+begin
+  if not public.is_member(p_group) then raise exception 'No perteneces a este reino'; end if;
+  if p_slot not in (1, 2) then raise exception 'Solo hay dos pretendientes'; end if;
+  if char_length(trim(coalesce(p_name, ''))) = 0 then raise exception 'Escribe un nombre'; end if;
+  if char_length(trim(p_name)) > 30 then raise exception 'Ese nombre es demasiado largo'; end if;
+
+  select * into g from public.groups where id = p_group;
+  select count(*) into v_habitos from public.habits where group_id = p_group and not archived;
+
+  v_xp_min  := case when p_slot = 1 then 600 else 1500 end;
+  v_hab_min := case when p_slot = 1 then 4 else 6 end;
+
+  if g.xp < v_xp_min or v_habitos < v_hab_min then
+    raise exception 'Aún no se ha dado a conocer: hacen falta % XP y % hábitos activos', v_xp_min, v_hab_min;
+  end if;
+
+  if p_slot = 1 then
+    update public.groups set suitor_one_name = trim(p_name) where id = p_group;
+  else
+    update public.groups set suitor_two_name = trim(p_name) where id = p_group;
+  end if;
 end;
 $$;
 
@@ -514,8 +595,10 @@ $$;
 -- ---------------------------------------------------------------------------
 -- Supervivencia: la ciudad se puede perder
 --
--- Cada hábito que se queda sin marcar sube la amenaza; un día completo la
--- baja. Cuando la amenaza llega a 100 entra un pueblo saqueador. Si la defensa
+-- Cada hábito diario que se queda sin marcar sube la amenaza; un día completo
+-- la baja. Los hábitos semanales se juzgan al cerrar la semana, el domingo,
+-- comparando las marcas con su objetivo. Cuando la amenaza llega a 60 entra un
+-- pueblo saqueador. Si la defensa
 -- aguanta, se le rechaza; si no, los edificios pierden integridad y acaban en
 -- ruinas.
 --
@@ -556,6 +639,7 @@ declare
   v_habits   int;
   v_marks    int;
   v_falta    int;
+  v_objetivo int;
   v_fallidos int;
   v_threat   int;
   v_defensa  int;
@@ -582,12 +666,16 @@ begin
   d := greatest(g.last_settled_on + 1, hoy - 60);
 
   while d < hoy loop
+    -- Los diarios se juzgan cada día
     select count(*) into v_habits
       from public.habits
-      where group_id = p_group and not archived and created_at::date <= d;
+      where group_id = p_group and not archived and frequency = 'daily'
+        and created_at::date <= d;
 
     select count(*) into v_marks
-      from public.habit_logs where group_id = p_group and log_date = d;
+      from public.habit_logs l
+      join public.habits h on h.id = l.habit_id
+      where l.group_id = p_group and l.log_date = d and h.frequency = 'daily';
 
     if v_habits > 0 then
       v_falta := greatest(0, v_habits - v_marks);
@@ -598,6 +686,32 @@ begin
         v_threat := greatest(0, v_threat - 20);
       else
         v_threat := v_threat + (30 * v_falta) / v_habits;
+      end if;
+    end if;
+
+    -- Los semanales se juzgan el domingo, con la semana entera a la vista.
+    -- Pedirles una marca cada día sería castigar por diseño lo que el propio
+    -- usuario marcó como semanal.
+    if extract(isodow from d) = 7 then
+      select coalesce(sum(h.weekly_target), 0),
+             coalesce(sum(greatest(0, h.weekly_target - coalesce(m.marcas, 0))), 0)
+        into v_objetivo, v_falta
+        from public.habits h
+        left join (
+          select habit_id, count(*)::int as marcas
+          from public.habit_logs
+          where group_id = p_group and log_date between d - 6 and d
+          group by habit_id
+        ) m on m.habit_id = h.id
+       where h.group_id = p_group and not h.archived and h.frequency = 'weekly'
+         and h.created_at::date <= d - 6;
+
+      if v_objetivo > 0 then
+        if v_falta = 0 then
+          v_threat := greatest(0, v_threat - 20);
+        else
+          v_threat := v_threat + (30 * v_falta) / v_objetivo;
+        end if;
       end if;
     end if;
 

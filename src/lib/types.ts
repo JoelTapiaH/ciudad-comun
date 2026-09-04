@@ -1,5 +1,7 @@
 export type Ink = "pink" | "blue" | "yellow" | "green";
 
+export type Frequency = "daily" | "weekly";
+
 export type Profile = {
   id: string;
   display_name: string;
@@ -17,6 +19,8 @@ export type Group = {
   xp: number;
   threat: number;
   last_settled_on: string;
+  suitor_one_name: string | null;
+  suitor_two_name: string | null;
   created_at: string;
 };
 
@@ -34,6 +38,8 @@ export type Habit = {
   name: string;
   emoji: string;
   ink: Ink;
+  frequency: Frequency;
+  weekly_target: number;
   archived: boolean;
   created_at: string;
 };
@@ -141,6 +147,10 @@ export type Database = {
         Returns: undefined;
       };
       claim_challenge: { Args: { p_challenge: string }; Returns: undefined };
+      set_suitor_name: {
+        Args: { p_group: string; p_slot: number; p_name: string };
+        Returns: undefined;
+      };
       city_level: { Args: { p_xp: number }; Returns: number };
       settle_city: { Args: { p_group: string }; Returns: number };
       city_defense: { Args: { p_group: string; p_on?: string | null }; Returns: number };
@@ -161,6 +171,10 @@ export type HabitWithToday = Habit & {
   doneToday: boolean;
   logId: string | null;
   streak: number;
+  /** Marcas de este hábito en la semana en curso (lunes a domingo). */
+  weekMarks: number;
+  /** Fechas marcadas en los últimos 35 días, de más reciente a más antigua. */
+  history: string[];
 };
 
 export type FeedEntry = {

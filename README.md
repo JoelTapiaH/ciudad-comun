@@ -5,7 +5,10 @@ misma caja de monedas, y con esas monedas el grupo levanta **una sola ciudad**
 sobre una cuadrícula isométrica.
 
 Pero la ciudad no solo se construye: **hay que mantenerla en pie**. En el centro
-está el Alcázar, donde viven el príncipe Adiel, su esposa Nara y los mellizos.
+está el Alcázar, donde viven el rey Joel y la reina Betsabell con Mateo y
+Olivia. Joel sale a pelear con Víctor. En la corte están además las princesas
+Merari y Daniela, y dos príncipes de otro reino que vinieron a pedir su mano y
+se quedaron en la muralla: **sus nombres se desbloquean con XP y hábitos**.
 Los días que quedan hábitos sin marcar suben la amenaza, y cuando llega a 60
 entra un pueblo saqueador. Los golpes caen primero en lo que hayáis levantado
 alrededor: **mientras quede una muralla en pie, nadie llega a la casa**. El
@@ -96,7 +99,8 @@ A partir de aquí, cada `git push` a `main` vuelve a desplegar solo.
 | Acción | Efecto |
 | --- | --- |
 | Marcar un hábito | 10 monedas + 2 por cada día de racha, con tope de 10 días (12–30 monedas) |
-| Racha | Días consecutivos. Un hueco la reinicia |
+| Hábito diario | Se espera cada día. Racha en días consecutivos |
+| Hábito semanal | Se elige cuántas veces por semana (1–6). Racha en semanas cumplidas |
 | Nivel de ciudad | Umbral de nivel *n* = 75·n·(n−1) → Nv.2 a 150 XP, Nv.3 a 450, Nv.4 a 900 |
 | Construir | Cuesta lo que marca el catálogo y exige el nivel mínimo del edificio |
 | Derribar | Devuelve la mitad de lo que costó, en proporción a lo que quede en pie |
@@ -106,8 +110,10 @@ A partir de aquí, cada `git push` a `main` vuelve a desplegar solo.
 
 | Situación | Efecto sobre la amenaza |
 | --- | --- |
-| Día con todos los hábitos marcados | **−20** |
-| Día con huecos | **+30 × (huecos / hábitos)**. Subir cuesta más que bajar |
+| Día con todos los hábitos **diarios** marcados | **−20** |
+| Día con huecos | **+30 × (huecos / diarios)**. Subir cuesta más que bajar |
+| Domingo con los **semanales** cumplidos | **−20** |
+| Domingo con semanales a medias | **+30 × (lo que falta / objetivo total)** |
 | Un reto vence sin cumplirse | **+60**: entran seguro |
 | Amenaza ≥ 60 | Asalto. Después baja a 35 si se rechaza, a 25 si entran |
 
@@ -147,6 +153,23 @@ aguantan un asalto.
 | Alcázar | — | — | 15 |
 | Monumento · Faro | solo por retos | | 45 · 60 |
 
+Los hábitos semanales **solo se juzgan el domingo**, con la semana entera a la
+vista: pedirles una marca diaria sería castigar por diseño lo que el propio
+usuario marcó como semanal.
+
+### La corte
+
+Los dos pretendientes no tienen nombre hasta que el reino da la talla:
+
+| | Hace falta |
+| --- | --- |
+| El pretendiente de Merari | 600 XP y 4 hábitos activos |
+| El pretendiente de Daniela | 1500 XP y 6 hábitos activos |
+
+Al llegar al umbral se desbloquea el derecho a nombrarlos, y el nombre se
+escribe desde la pantalla de la ciudad. El umbral se comprueba en la base de
+datos, no en el navegador.
+
 La liquidación **no usa temporizador**: al abrir la app, `settle_city()` cierra
 de golpe los días pendientes (hasta 60). Funciona igual si entras cada día que
 si vuelves tras dos semanas, y no depende de `pg_cron` ni del plan de pago.
@@ -164,9 +187,9 @@ grupos a los que perteneces, y solo puedes marcar o borrar tus propios hábitos.
 
 ## Pruebas
 
-El esquema tiene 83 comprobaciones automáticas —rachas, economía, construcción,
-retos, asaltos, daños, desgaste, protección del Alcázar, reparación y RLS— que
-se ejecutan contra un Postgres desechable:
+El esquema tiene 93 comprobaciones automáticas —rachas, economía, construcción,
+retos, asaltos, daños, desgaste, protección del Alcázar, reparación, hábitos
+semanales, la corte y RLS— que se ejecutan contra un Postgres desechable:
 
 ### Probar los asaltos sin esperar
 
@@ -214,14 +237,16 @@ src/
   components/
     BuildingSprite.tsx    Catálogo de siluetas isométricas, con daños y ruinas
     CityCanvas.tsx        Cuadrícula interactiva con Realtime
-    HabitBoard.tsx        Tablero del día con marcado optimista
+    HabitBoard.tsx        Tablero con pestañas Hoy / Semana / Mes
+    HabitHistory.tsx      Rejillas de la semana y de las últimas cinco
+    Court.tsx             La corte y el desbloqueo de los pretendientes
     ThreatPanel.tsx       Estado del asedio: amenaza, defensa y pronóstico
     KeepCard.tsx          El Alcázar y quién vive dentro
     RaidAlert.tsx         Qué pasó mientras nadie miraba
     RaidChronicle.tsx     Historial de asaltos
   lib/
     game.ts               Reglas del juego (espejo de las de Postgres)
-    story.ts              La familia del Alcázar y la voz de la crónica
+    story.ts              El reino, la corte y la voz de la crónica
     data.ts               Consultas del servidor
     supabase/             Clientes de navegador, servidor y proxy
   proxy.ts                Refresco de sesión y redirección a /entrar

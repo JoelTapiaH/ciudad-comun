@@ -35,9 +35,11 @@ export default async function HoyPage() {
   const defense = cityDefense(tiles, new Map(buildings.map((b) => [b.id, b])), weekMarks);
   const band = threatBand(group.threat);
   const keep = tiles.find((t) => t.building_id === "keep") ?? null;
-  const habitsTotal = board.mine.length + board.others.length;
-  const marksToday =
-    board.mine.filter((h) => h.doneToday).length + board.others.filter((h) => h.doneToday).length;
+  // Solo los diarios cuentan para lo que se juzga esta noche; los semanales
+  // se evalúan al cerrar la semana.
+  const diarios = [...board.mine, ...board.others].filter((h) => h.frequency === "daily");
+  const habitsTotal = diarios.length;
+  const marksToday = diarios.filter((h) => h.doneToday).length;
 
   const todayIso = today();
   const active = challenges.find((c) => !c.completed_at && c.ends_on >= todayIso);

@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
 import CityCanvas from "@/components/CityCanvas";
+import Court from "@/components/Court";
 import KeepCard from "@/components/KeepCard";
 import RaidChronicle from "@/components/RaidChronicle";
 import ThreatPanel from "@/components/ThreatPanel";
 import {
+  getActiveHabitCount,
   getBuildings,
   getCityTiles,
   getRaids,
@@ -18,12 +20,13 @@ export default async function CiudadPage() {
   if (!workspace) redirect("/empezar");
 
   const { group, members } = workspace;
-  const [tiles, buildings, raids, weekMarks, pulse] = await Promise.all([
+  const [tiles, buildings, raids, weekMarks, pulse, activeHabits] = await Promise.all([
     getCityTiles(group.id),
     getBuildings(),
     getRaids(group.id),
     getWeekMarks(group.id),
     getTodayPulse(group.id),
+    getActiveHabitCount(group.id),
   ]);
 
   const builderNames = Object.fromEntries(members.map((m) => [m.id, m.display_name]));
@@ -49,19 +52,25 @@ export default async function CiudadPage() {
 
       <KeepCard integrity={keep ? keep.integrity : null} threat={group.threat} keepCost={keepCost} />
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Court
+          groupId={group.id}
+          xp={group.xp}
+          activeHabits={activeHabits}
+          suitorNames={[group.suitor_one_name, group.suitor_two_name]}
+        />
         <ThreatPanel
           threat={group.threat}
           defense={defense}
           habits={pulse.habits}
           marks={pulse.marks}
         />
-
-        <section>
-          <p className="eyebrow mb-2">Crónica de asaltos</p>
-          <RaidChronicle raids={raids} />
-        </section>
       </div>
+
+      <section>
+        <p className="eyebrow mb-2">Crónica de asaltos</p>
+        <RaidChronicle raids={raids} />
+      </section>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="panel p-4">

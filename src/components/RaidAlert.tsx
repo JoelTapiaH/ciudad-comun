@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FAMILIA, contarAsalto } from "@/lib/story";
+import { REINO, contarAsalto } from "@/lib/story";
 import type { Raid } from "@/lib/types";
 
 /* Lo primero que se ve al volver después de unos días flojos. No regaña:
@@ -25,7 +25,7 @@ export default function RaidAlert({ raids }: { raids: Raid[] }) {
       <p className="eyebrow mb-1">Mientras no estabais</p>
       <h2 className="display text-2xl">
         {llegaronACasa
-          ? `Llegaron hasta ${FAMILIA.esposa} y los niños`
+          ? `Llegaron hasta ${REINO.reina} y los niños`
           : todosRechazados
             ? raids.length === 1
               ? `${raids[0].raider} lo intentó y no pudo`
@@ -49,7 +49,7 @@ export default function RaidAlert({ raids }: { raids: Raid[] }) {
 
       <p className="mt-3 text-sm text-ink-60">
         {llegaronACasa
-          ? `${FAMILIA.principe} los echó del patio, pero no aguantará otra. Levantad algo entre ellos y la casa.`
+          ? `${REINO.rey} y ${REINO.companero} los echaron del patio, pero no aguantarán otra. Levantad algo entre ellos y la casa.`
           : todosRechazados
             ? "La muralla aguantó, aunque quedó tocada. Repárala antes del próximo."
             : "Marcad hoy para bajar la amenaza, y reparad lo dañado antes de que vuelvan."}

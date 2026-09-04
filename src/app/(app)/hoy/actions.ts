@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { today } from "@/lib/game";
-import type { Ink } from "@/lib/types";
+import type { Frequency, Ink } from "@/lib/types";
 
 export type MarkResult = { error?: string; coins?: number; streak?: number };
 
@@ -54,6 +54,10 @@ export async function addHabit(formData: FormData): Promise<{ error?: string }> 
   const emoji = String(formData.get("emoji") ?? "✅").trim() || "✅";
   const ink = String(formData.get("ink") ?? "blue") as Ink;
   const groupId = String(formData.get("group_id") ?? "");
+  const frequency = (String(formData.get("frequency") ?? "daily") === "weekly"
+    ? "weekly"
+    : "daily") as Frequency;
+  const weeklyTarget = Math.min(6, Math.max(1, Number(formData.get("weekly_target") ?? 3)));
 
   if (!name) return { error: "El hábito necesita un nombre." };
   if (name.length > 60) return { error: "Acorta el nombre a 60 caracteres." };
@@ -66,7 +70,15 @@ export async function addHabit(formData: FormData): Promise<{ error?: string }> 
 
   const { error } = await supabase
     .from("habits")
-    .insert({ group_id: groupId, user_id: user.id, name, emoji, ink });
+    .insert({
+      group_id: groupId,
+      user_id: user.id,
+      name,
+      emoji,
+      ink,
+      frequency,
+      weekly_target: weeklyTarget,
+    });
 
   if (error) return { error: error.message };
 

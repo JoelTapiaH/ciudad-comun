@@ -4,8 +4,9 @@ import { useEffect, useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { addHabit, archiveHabit, markHabit, unmarkHabit } from "@/app/(app)/hoy/actions";
-import { INKS, INK_LABEL, INK_VAR, rewardFor } from "@/lib/game";
-import type { HabitWithToday, Ink } from "@/lib/types";
+import { MonthView, WeekView } from "@/components/HabitHistory";
+import { INKS, INK_LABEL, INK_VAR, rewardFor, weeklyDone } from "@/lib/game";
+import type { Frequency, HabitWithToday, Ink } from "@/lib/types";
 
 const EMOJI = ["🏃", "📚", "💧", "🧘", "🛏️", "🥗", "✍️", "🎸", "🧹", "☎️", "🚭", "💪"];
 
@@ -23,6 +24,7 @@ export default function HabitBoard({ groupId, mine, others }: Props) {
   const [flash, setFlash] = useState<{ id: string; coins: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [vista, setVista] = useState<"hoy" | "semana" | "mes">("hoy");
 
   // Canal propio por instancia: supabase-js reutiliza el canal si el nombre
   // ya existe, y .on() sobre un canal suscrito lanza excepción.
@@ -66,7 +68,15 @@ export default function HabitBoard({ groupId, mine, others }: Props) {
     });
   }
 
-  const doneCount = mine.filter((h) => optimistic[h.id] ?? h.doneToday).length;
+  /** Un semanal está cubierto cuando llega a su objetivo, no por marcarlo hoy. */
+  function cubierto(h: HabitWithToday) {
+    const hoy = optimistic[h.id] ?? h.doneToday;
+    if (h.frequency === "daily") return hoy;
+    const marcas = h.weekMarks + (hoy && !h.doneToday ? 1 : 0) - (!hoy && h.doneToday ? 1 : 0);
+    return weeklyDone(marcas, h.weekly_target);
+  }
+
+  const doneCount = mine.filter(cubierto).length;
 
   return (
     <section className="flex flex-col gap-4">
@@ -86,9 +96,37 @@ export default function HabitBoard({ groupId, mine, others }: Props) {
         </button>
       </div>
 
+      <div className="flex gap-1 rounded-full border-2 border-[var(--ink)] p-1">
+        {(
+          [
+            ["hoy", "Hoy"],
+            ["semana", "Semana"],
+            ["mes", "Mes"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setVista(value)}
+            aria-pressed={vista === value}
+            className="flex-1 rounded-full px-3 py-1.5 text-sm font-semibold transition-colors"
+            style={
+              vista === value
+                ? { background: "var(--ink)", color: "var(--paper)" }
+                : { color: "var(--ink)" }
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {adding ? <NewHabit groupId={groupId} onDone={() => setAdding(false)} /> : null}
 
-      {mine.length === 0 && !adding ? (
+      {vista === "semana" ? <WeekView habits={mine} /> : null}
+      {vista === "mes" ? <MonthView habits={mine} /> : null}
+
+      {vista === "hoy" && mine.length === 0 && !adding ? (
         <div className="panel p-5">
           <p className="text-sm text-ink-60">
             Empieza por uno solo, el que sabes que puedes cumplir mañana. Cada marca son al menos 10
@@ -101,10 +139,14 @@ export default function HabitBoard({ groupId, mine, others }: Props) {
       ) : null}
 
       <ul className="flex flex-col gap-2">
-        {mine.map((habit) => {
+        {(vista === "hoy" ? mine : []).map((habit) => {
           const done = optimistic[habit.id] ?? habit.doneToday;
           const nextStreak = done ? habit.streak : habit.streak + 1;
           const reward = rewardFor(Math.max(nextStreak, 1));
+          const semanal = habit.frequency === "weekly";
+          const marcasSemana = habit.weekMarks + (done && !habit.doneToday ? 1 : 0) -
+            (!done && habit.doneToday ? 1 : 0);
+          const listo = cubierto(habit);
 
           return (
             <li key={habit.id} className="relative">
@@ -112,7 +154,7 @@ export default function HabitBoard({ groupId, mine, others }: Props) {
                 className="panel flex items-center gap-3 p-3 transition-shadow"
                 style={{
                   borderLeft: `8px solid ${INK_VAR[habit.ink]}`,
-                  boxShadow: done ? "3px 3px 0 var(--green)" : undefined,
+                  boxShadow: listo ? "3px 3px 0 var(--green)" : undefined,
                 }}
               >
                 <button
@@ -135,9 +177,13 @@ export default function HabitBoard({ groupId, mine, others }: Props) {
                     {habit.name}
                   </p>
                   <p className="num text-xs text-ink-60">
-                    {habit.streak > 0 ? `Racha de ${habit.streak} día${habit.streak === 1 ? "" : "s"}` : "Sin racha"}
+                    {semanal
+                      ? `${marcasSemana} de ${habit.weekly_target} esta semana`
+                      : habit.streak > 0
+                        ? `Racha de ${habit.streak} día${habit.streak === 1 ? "" : "s"}`
+                        : "Sin racha"}
                     {" · "}
-                    {done ? "sumado hoy" : `vale ◎ ${reward.coins}`}
+                    {done ? "marcado hoy" : `vale ◎ ${reward.coins}`}
                   </p>
                 </div>
 
@@ -180,7 +226,7 @@ export default function HabitBoard({ groupId, mine, others }: Props) {
         </p>
       ) : null}
 
-      {others.length > 0 ? (
+      {vista === "hoy" && others.length > 0 ? (
         <div className="mt-2">
           <p className="eyebrow mb-2">El resto del grupo</p>
           <ul className="flex flex-col gap-1.5">
@@ -202,7 +248,13 @@ export default function HabitBoard({ groupId, mine, others }: Props) {
                 <span className="min-w-0 flex-1 truncate text-sm">
                   <span className="text-ink-60">{habit.owner.display_name}</span> · {habit.name}
                 </span>
-                {habit.streak > 0 ? <span className="num text-xs text-ink-60">×{habit.streak}</span> : null}
+                {habit.frequency === "weekly" ? (
+                  <span className="num text-xs text-ink-60">
+                    {habit.weekMarks}/{habit.weekly_target} sem.
+                  </span>
+                ) : habit.streak > 0 ? (
+                  <span className="num text-xs text-ink-60">×{habit.streak}</span>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -216,6 +268,8 @@ function NewHabit({ groupId, onDone }: { groupId: string; onDone: () => void }) 
   const router = useRouter();
   const [emoji, setEmoji] = useState(EMOJI[0]);
   const [ink, setInk] = useState<Ink>("blue");
+  const [frequency, setFrequency] = useState<Frequency>("daily");
+  const [weeklyTarget, setWeeklyTarget] = useState(3);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -237,11 +291,67 @@ function NewHabit({ groupId, onDone }: { groupId: string; onDone: () => void }) 
       <input type="hidden" name="group_id" value={groupId} />
       <input type="hidden" name="emoji" value={emoji} />
       <input type="hidden" name="ink" value={ink} />
+      <input type="hidden" name="frequency" value={frequency} />
+      <input type="hidden" name="weekly_target" value={weeklyTarget} />
 
       <label className="flex flex-col gap-1.5">
         <span className="eyebrow">Qué vas a hacer cada día</span>
         <input className="field" name="name" placeholder="Correr 20 minutos" maxLength={60} required autoFocus />
       </label>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="eyebrow">Cada cuánto</span>
+        <div className="flex gap-1.5">
+          {(
+            [
+              ["daily", "Todos los días"],
+              ["weekly", "Algunos días"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setFrequency(value)}
+              aria-pressed={frequency === value}
+              className="flex-1 rounded-[3px] border-2 py-2 text-sm font-semibold"
+              style={{
+                borderColor: "var(--ink)",
+                background: frequency === value ? "var(--ink)" : "transparent",
+                color: frequency === value ? "var(--paper)" : "var(--ink)",
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {frequency === "weekly" ? (
+          <div className="stamp-in mt-1 flex items-center gap-2">
+            <span className="text-sm text-ink-60">Veces por semana</span>
+            <div className="flex gap-1">
+              {[1, 2, 3, 4, 5, 6].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setWeeklyTarget(n)}
+                  aria-pressed={weeklyTarget === n}
+                  className="num h-8 w-8 rounded-[3px] border-2 text-sm font-semibold"
+                  style={{
+                    borderColor: "var(--ink)",
+                    background: weeklyTarget === n ? "var(--yellow)" : "transparent",
+                    color: weeklyTarget === n ? "#16204a" : "var(--ink)",
+                  }}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <span className="text-xs text-ink-60">
+            Un día sin marcar sube la amenaza del reino.
+          </span>
+        )}
+      </div>
 
       <div className="flex flex-col gap-1.5">
         <span className="eyebrow">Icono</span>
